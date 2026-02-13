@@ -11,6 +11,35 @@ episodic_sql_escape() {
     printf '%s' "${1//\'/\'\'}"
 }
 
+# Escape a user query for safe use in FTS5 MATCH expressions.
+# Wraps each token in double quotes so FTS5 operators (OR, AND, NOT,
+# NEAR, etc.) and special characters (*, :, etc.) are treated as literals.
+# Multi-word queries use implicit AND (each word quoted separately).
+# Usage: safe_query=$(episodic_fts5_escape "$user_input")
+episodic_fts5_escape() {
+    local input="$1"
+    # Remove characters that are problematic even inside FTS5 double quotes
+    # (unmatched parens, braces, brackets)
+    input="${input//(/}"
+    input="${input//)/}"
+    input="${input//{/}"
+    input="${input//\}/}"
+    # Quote each whitespace-separated token individually so FTS5 operators
+    # like OR, AND, NOT, NEAR are treated as search terms, and * : ^ are
+    # neutralized. Embedded double quotes are doubled per FTS5 convention.
+    local result=""
+    local token
+    local old_glob
+    old_glob=$(shopt -p noglob 2>/dev/null || true)
+    set -f  # disable glob expansion for word splitting
+    for token in $input; do
+        token="${token//\"/\"\"}"
+        result="${result:+$result }\"$token\""
+    done
+    eval "$old_glob" 2>/dev/null || set +f  # restore
+    printf '%s' "$result"
+}
+
 # SQLite busy timeout in milliseconds.
 # Multiple background processes (archive, index, synthesis) write concurrently.
 EPISODIC_BUSY_TIMEOUT="${EPISODIC_BUSY_TIMEOUT:-5000}"
@@ -265,6 +294,8 @@ episodic_db_search() {
     local query="$1"
     local limit="${2:-10}"
 
+    # FTS5-escape first (wraps in double quotes), then SQL-escape (doubles single quotes)
+    query=$(episodic_fts5_escape "$query")
     query=$(episodic_sql_escape "$query")
 
     episodic_db_query_json "

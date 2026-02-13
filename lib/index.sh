@@ -273,6 +273,7 @@ episodic_index_search() {
     local limit="${2:-10}"
     local db="${EPISODIC_DB}"
 
+    query=$(episodic_fts5_escape "$query")
     query=$(episodic_sql_escape "$query")
 
     episodic_db_query_json "
