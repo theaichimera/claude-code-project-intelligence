@@ -376,14 +376,16 @@ episodic_db_count() {
     episodic_db_exec "SELECT count(*) FROM sessions;" "$db"
 }
 
-# Check if a session is already archived
+# Check if a session is already fully archived (has a completed summary or
+# is intentionally without one). Sessions with 'pending' or 'summary_failed'
+# status are considered NOT archived so they will be retried automatically.
 episodic_db_is_archived() {
     local db="$EPISODIC_DB"
     local session_id="$1"
     local safe_id
     safe_id=$(episodic_sql_escape "$session_id")
     local count
-    count=$(episodic_db_exec "SELECT count(*) FROM sessions WHERE id='$safe_id';" "$db")
+    count=$(episodic_db_exec "SELECT count(*) FROM archive_log WHERE session_id='$safe_id' AND status IN ('complete','too_short','no_summary');" "$db")
     [[ "$count" -gt 0 ]]
 }
 

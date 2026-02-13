@@ -159,13 +159,15 @@ archive_session() {
         cp "$jsonl_path" "$archive_file"
     fi
 
-    # Insert session into database
+    # Insert session into database with 'pending' status.
+    # The status only advances to 'complete' after a successful summary,
+    # so sessions with failed summaries will be retried on next archive run.
     episodic_db_insert_session \
         "$session_id" "$project" "$project_path" "$archive_file" "$jsonl_path" \
         "$first_prompt" "$message_count" "$user_count" "$assistant_count" \
         "$git_branch" "$created_at" "$modified_at" "$duration"
 
-    episodic_db_update_log "$session_id" "archived"
+    episodic_db_update_log "$session_id" "pending"
 
     # Generate summary unless skipped
     if [[ "$skip_summary" != "true" ]]; then
@@ -188,6 +190,8 @@ archive_session() {
             episodic_db_update_log "$session_id" "too_short"
             episodic_log "INFO" "Session $session_id too short for summary"
         fi
+    else
+        episodic_db_update_log "$session_id" "no_summary"
     fi
 
     # Trigger auto-synthesis check
