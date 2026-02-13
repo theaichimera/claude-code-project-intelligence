@@ -126,7 +126,11 @@ episodic_index_extract_text() {
 # Usage: episodic_index_content_hash <file_path>
 episodic_index_content_hash() {
     local file_path="$1"
-    shasum -a 256 < "$file_path" | cut -d' ' -f1
+    if command -v sha256sum >/dev/null 2>&1; then
+        sha256sum < "$file_path" | cut -d' ' -f1
+    else
+        shasum -a 256 < "$file_path" | cut -d' ' -f1
+    fi
 }
 
 # Index a single file into the documents table + FTS5
