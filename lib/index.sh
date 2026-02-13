@@ -218,23 +218,30 @@ episodic_index_file() {
     local safe_file_path="${file_path//\'/\'\'}"
     local safe_file_name="${file_name//\'/\'\'}"
     local safe_title="${title//\'/\'\'}"
-    local safe_text="${extracted_text//\'/\'\'}"
 
-    # Insert/replace into documents table
-    sqlite3 "$db" <<SQL
-INSERT OR REPLACE INTO documents (
-    id, project, file_path, file_name, title, file_type,
-    file_size, content_hash, extracted_text, extraction_method, indexed_at
-) VALUES (
-    '$safe_id', '$safe_project', '$safe_file_path', '$safe_file_name',
-    '$safe_title', '$file_type', $file_size, '$content_hash',
-    '$safe_text', '$extraction_method', datetime('now')
-);
+    # Write SQL to temp file to avoid bash variable size limits on large text.
+    # The extracted_text can be up to 100KB; heredoc expansion through bash
+    # is fragile at that size. Writing to a file bypasses this.
+    local sql_file
+    sql_file=$(mktemp)
+    trap 'rm -f "$sql_file"' RETURN
 
-DELETE FROM documents_fts WHERE doc_id = '$safe_id';
-INSERT INTO documents_fts (doc_id, project, file_name, title, extracted_text)
-VALUES ('$safe_id', '$safe_project', '$safe_file_name', '$safe_title', '$safe_text');
-SQL
+    {
+        printf "INSERT OR REPLACE INTO documents (\n"
+        printf "    id, project, file_path, file_name, title, file_type,\n"
+        printf "    file_size, content_hash, extracted_text, extraction_method, indexed_at\n"
+        printf ") VALUES (\n"
+        printf "    '%s', '%s', '%s', '%s',\n" "$safe_id" "$safe_project" "$safe_file_path" "$safe_file_name"
+        printf "    '%s', '%s', %s, '%s',\n" "$safe_title" "$file_type" "$file_size" "$content_hash"
+        printf "    '%s', '%s', datetime('now')\n" "${extracted_text//\'/\'\'}" "$extraction_method"
+        printf ");\n\n"
+        printf "DELETE FROM documents_fts WHERE doc_id = '%s';\n" "$safe_id"
+        printf "INSERT INTO documents_fts (doc_id, project, file_name, title, extracted_text)\n"
+        printf "VALUES ('%s', '%s', '%s', '%s', '%s');\n" \
+            "$safe_id" "$safe_project" "$safe_file_name" "$safe_title" "${extracted_text//\'/\'\'}"
+    } > "$sql_file"
+
+    sqlite3 "$db" < "$sql_file"
 
     episodic_log "INFO" "Indexed: $doc_id ($file_type, $file_size bytes)"
 }
