@@ -26,7 +26,7 @@ EPISODIC_OPUS_MODEL="${EPISODIC_OPUS_MODEL:-claude-opus-4-5-20251101}"
 # Vision model for PDF/image OCR during document indexing
 EPISODIC_INDEX_VISION_MODEL="${EPISODIC_INDEX_VISION_MODEL:-claude-haiku-4-5-20251001}"
 
-EPISODIC_SYNTHESIZE_EVERY="${EPISODIC_SYNTHESIZE_EVERY:-10}"
+EPISODIC_SYNTHESIZE_EVERY="${EPISODIC_SYNTHESIZE_EVERY:-2}"
 
 # Skill decay thresholds (days) for context injection
 # Fresh: full content injected. Aging: one-line summary. Stale: omitted.
