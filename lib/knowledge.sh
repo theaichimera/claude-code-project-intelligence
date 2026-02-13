@@ -5,6 +5,53 @@
 _EPISODIC_LIB_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 source "$_EPISODIC_LIB_DIR/config.sh"
 
+# Lockfile for serializing git operations on the knowledge repo.
+# Uses mkdir for atomic lock acquisition (POSIX-portable).
+EPISODIC_KNOWLEDGE_LOCK="${EPISODIC_KNOWLEDGE_DIR}/.episodic-lock"
+EPISODIC_LOCK_TIMEOUT="${EPISODIC_LOCK_TIMEOUT:-30}"  # seconds before stale lock is broken
+
+# Acquire the knowledge repo lock. Blocks up to EPISODIC_LOCK_TIMEOUT seconds.
+# Usage: episodic_knowledge_lock
+# Returns 0 on success, 1 on timeout.
+episodic_knowledge_lock() {
+    local lock_dir="$EPISODIC_KNOWLEDGE_LOCK"
+    local timeout="${EPISODIC_LOCK_TIMEOUT}"
+    local waited=0
+
+    while ! mkdir "$lock_dir" 2>/dev/null; do
+        # Check for stale lock (older than timeout)
+        local pid_file="$lock_dir/pid"
+        if [[ -f "$pid_file" ]]; then
+            local lock_pid
+            lock_pid=$(cat "$pid_file" 2>/dev/null || echo "")
+            # If the locking process is gone, break the stale lock
+            if [[ -n "$lock_pid" ]] && ! kill -0 "$lock_pid" 2>/dev/null; then
+                episodic_log "WARN" "Breaking stale knowledge lock (pid $lock_pid gone)"
+                rm -rf "$lock_dir"
+                continue
+            fi
+        fi
+
+        if [[ $waited -ge $timeout ]]; then
+            episodic_log "ERROR" "Timed out waiting for knowledge lock after ${timeout}s"
+            return 1
+        fi
+
+        sleep 1
+        waited=$((waited + 1))
+    done
+
+    # Write our PID so others can detect stale locks
+    echo $$ > "$lock_dir/pid"
+    return 0
+}
+
+# Release the knowledge repo lock.
+# Usage: episodic_knowledge_unlock
+episodic_knowledge_unlock() {
+    rm -rf "$EPISODIC_KNOWLEDGE_LOCK"
+}
+
 # Check if knowledge repo is configured (has a remote URL set)
 episodic_knowledge_is_configured() {
     [[ -n "${EPISODIC_KNOWLEDGE_REPO:-}" ]] && [[ -d "$EPISODIC_KNOWLEDGE_DIR/.git" ]]
@@ -163,6 +210,13 @@ episodic_knowledge_push() {
         return 0
     fi
 
+    if ! episodic_knowledge_lock; then
+        episodic_log "ERROR" "Could not acquire lock for push"
+        return 1
+    fi
+    # Ensure unlock on exit (normal or error)
+    trap 'episodic_knowledge_unlock' RETURN
+
     local repo="$EPISODIC_KNOWLEDGE_DIR"
 
     # Stage all changes
@@ -197,6 +251,12 @@ episodic_knowledge_pull() {
         return 0
     fi
 
+    if ! episodic_knowledge_lock; then
+        episodic_log "ERROR" "Could not acquire lock for pull"
+        return 1
+    fi
+    trap 'episodic_knowledge_unlock' RETURN
+
     local repo="$EPISODIC_KNOWLEDGE_DIR"
 
     if ! git -C "$repo" pull --rebase --quiet 2>/dev/null; then
@@ -207,7 +267,7 @@ episodic_knowledge_pull() {
     episodic_log "INFO" "Pulled latest knowledge"
 }
 
-# Sync: pull then push
+# Sync: pull then push (acquires lock once for both operations)
 # Usage: episodic_knowledge_sync [pull|push]
 episodic_knowledge_sync() {
     local mode="${1:-both}"
@@ -220,8 +280,28 @@ episodic_knowledge_sync() {
             episodic_knowledge_push
             ;;
         both|*)
-            episodic_knowledge_pull
-            episodic_knowledge_push
+            # Acquire lock once for the combined pull+push to avoid
+            # releasing between operations and allowing interleaving.
+            if ! episodic_knowledge_is_configured; then
+                episodic_log "WARN" "Knowledge repo not configured, skipping sync"
+                return 0
+            fi
+            if ! episodic_knowledge_lock; then
+                episodic_log "ERROR" "Could not acquire lock for sync"
+                return 1
+            fi
+            trap 'episodic_knowledge_unlock' RETURN
+
+            local repo="$EPISODIC_KNOWLEDGE_DIR"
+            # Pull
+            git -C "$repo" pull --rebase --quiet 2>/dev/null || true
+            # Stage + commit + push
+            git -C "$repo" add -A 2>/dev/null
+            if ! git -C "$repo" diff --cached --quiet 2>/dev/null; then
+                git -C "$repo" commit -m "Update knowledge from episodic-memory" 2>/dev/null || true
+                git -C "$repo" push 2>/dev/null || true
+            fi
+            episodic_log "INFO" "Synced knowledge repo"
             ;;
     esac
 }
