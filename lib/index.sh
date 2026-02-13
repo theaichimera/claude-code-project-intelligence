@@ -195,6 +195,7 @@ episodic_index_file() {
 
     {
         printf ".timeout ${EPISODIC_BUSY_TIMEOUT}\n"
+        printf "BEGIN;\n"
         printf "INSERT OR REPLACE INTO documents (\n"
         printf "    id, project, file_path, file_name, title, file_type,\n"
         printf "    file_size, content_hash, extracted_text, extraction_method, indexed_at\n"
@@ -207,6 +208,7 @@ episodic_index_file() {
         printf "INSERT INTO documents_fts (doc_id, project, file_name, title, extracted_text)\n"
         printf "VALUES ('%s', '%s', '%s', '%s', '%s');\n" \
             "$safe_id" "$safe_project" "$safe_file_name" "$safe_title" "$(episodic_sql_escape "$extracted_text")"
+        printf "COMMIT;\n"
     } > "$sql_file"
 
     sqlite3 "$db" < "$sql_file"
