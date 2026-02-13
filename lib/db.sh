@@ -218,24 +218,33 @@ episodic_db_insert_summary() {
     first_prompt=$(episodic_sql_escape "$first_prompt")
     project=$(episodic_sql_escape "$project")
 
-    episodic_db_exec_multi "$db" <<SQL
-INSERT OR REPLACE INTO summaries (
-    session_id, topics, decisions, dead_ends, artifacts_created,
-    key_insights, summary, generated_at, model
-) VALUES (
-    '$session_id', '$topics_json', '$decisions_json', '$dead_ends_json',
-    '$artifacts_json', '$insights_json', '$summary_text', datetime('now'), '$model'
-);
+    # Write SQL to temp file to avoid bash variable size limits.
+    # Summary text and first_prompt can be substantial; writing through
+    # printf to a file bypasses heredoc expansion limitations.
+    local sql_file
+    sql_file=$(mktemp)
+    trap 'rm -f "$sql_file"' RETURN
 
-DELETE FROM sessions_fts WHERE session_id = '$session_id';
-INSERT INTO sessions_fts (
-    session_id, project, topics, decisions, dead_ends,
-    key_insights, summary, first_prompt
-) VALUES (
-    '$session_id', '$project', '$topics', '$decisions', '$dead_ends',
-    '$key_insights', '$summary_text', '$first_prompt'
-);
-SQL
+    {
+        printf ".timeout ${EPISODIC_BUSY_TIMEOUT}\n"
+        printf "INSERT OR REPLACE INTO summaries (\n"
+        printf "    session_id, topics, decisions, dead_ends, artifacts_created,\n"
+        printf "    key_insights, summary, generated_at, model\n"
+        printf ") VALUES (\n"
+        printf "    '%s', '%s', '%s', '%s',\n" "$session_id" "$topics_json" "$decisions_json" "$dead_ends_json"
+        printf "    '%s', '%s', '%s', datetime('now'), '%s'\n" "$artifacts_json" "$insights_json" "$summary_text" "$model"
+        printf ");\n\n"
+        printf "DELETE FROM sessions_fts WHERE session_id = '%s';\n" "$session_id"
+        printf "INSERT INTO sessions_fts (\n"
+        printf "    session_id, project, topics, decisions, dead_ends,\n"
+        printf "    key_insights, summary, first_prompt\n"
+        printf ") VALUES (\n"
+        printf "    '%s', '%s', '%s', '%s', '%s',\n" "$session_id" "$project" "$topics" "$decisions" "$dead_ends"
+        printf "    '%s', '%s', '%s'\n" "$key_insights" "$summary_text" "$first_prompt"
+        printf ");\n"
+    } > "$sql_file"
+
+    sqlite3 "$db" < "$sql_file"
 }
 
 # Update archive log
