@@ -227,6 +227,7 @@ episodic_db_insert_summary() {
 
     {
         printf ".timeout ${EPISODIC_BUSY_TIMEOUT}\n"
+        printf "BEGIN;\n"
         printf "INSERT OR REPLACE INTO summaries (\n"
         printf "    session_id, topics, decisions, dead_ends, artifacts_created,\n"
         printf "    key_insights, summary, generated_at, model\n"
@@ -242,6 +243,7 @@ episodic_db_insert_summary() {
         printf "    '%s', '%s', '%s', '%s', '%s',\n" "$session_id" "$project" "$topics" "$decisions" "$dead_ends"
         printf "    '%s', '%s', '%s'\n" "$key_insights" "$summary_text" "$first_prompt"
         printf ");\n"
+        printf "COMMIT;\n"
     } > "$sql_file"
 
     sqlite3 "$db" < "$sql_file"
