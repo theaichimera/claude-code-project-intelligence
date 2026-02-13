@@ -95,8 +95,16 @@ if type episodic_knowledge_is_configured &>/dev/null && episodic_knowledge_is_co
             # Parse generated date from YAML frontmatter
             gen_date=$(grep '^generated:' "$skill_file" 2>/dev/null | head -1 | sed 's/^generated: *//')
             if [[ -n "$gen_date" ]]; then
-                # Convert YYYY-MM-DD to epoch (macOS date -j)
-                gen_epoch=$(date -j -f "%Y-%m-%d" "$gen_date" +%s 2>/dev/null || echo "0")
+                # Convert YYYY-MM-DD to epoch (cross-platform)
+                if date -j -f "%Y-%m-%d" "$gen_date" +%s &>/dev/null; then
+                    # macOS
+                    gen_epoch=$(date -j -f "%Y-%m-%d" "$gen_date" +%s)
+                elif date -d "$gen_date" +%s &>/dev/null; then
+                    # Linux (GNU date)
+                    gen_epoch=$(date -d "$gen_date" +%s)
+                else
+                    gen_epoch=0
+                fi
             else
                 gen_epoch=0
             fi

@@ -82,12 +82,27 @@ archive_session() {
         if [[ "$created_at" =~ ^[0-9]+\.?[0-9]*$ ]]; then
             start_epoch="${created_at%%.*}"
         else
-            start_epoch=$(date -j -f "%Y-%m-%dT%H:%M:%S" "${created_at%%.*}" +%s 2>/dev/null || echo "0")
+            # Cross-platform ISO date to epoch
+            local ts="${created_at%%.*}"
+            if date -j -f "%Y-%m-%dT%H:%M:%S" "$ts" +%s &>/dev/null; then
+                start_epoch=$(date -j -f "%Y-%m-%dT%H:%M:%S" "$ts" +%s)
+            elif date -d "$ts" +%s &>/dev/null; then
+                start_epoch=$(date -d "$ts" +%s)
+            else
+                start_epoch=0
+            fi
         fi
         if [[ "$modified_at" =~ ^[0-9]+\.?[0-9]*$ ]]; then
             end_epoch="${modified_at%%.*}"
         else
-            end_epoch=$(date -j -f "%Y-%m-%dT%H:%M:%S" "${modified_at%%.*}" +%s 2>/dev/null || echo "0")
+            local ts="${modified_at%%.*}"
+            if date -j -f "%Y-%m-%dT%H:%M:%S" "$ts" +%s &>/dev/null; then
+                end_epoch=$(date -j -f "%Y-%m-%dT%H:%M:%S" "$ts" +%s)
+            elif date -d "$ts" +%s &>/dev/null; then
+                end_epoch=$(date -d "$ts" +%s)
+            else
+                end_epoch=0
+            fi
         fi
 
         if [[ "$start_epoch" -gt 0 && "$end_epoch" -gt 0 ]]; then
@@ -105,12 +120,21 @@ archive_session() {
     if [[ "$created_at" =~ ^[0-9]+\.?[0-9]*$ ]]; then
         local epoch_s="${created_at%%.*}"
         [[ ${#epoch_s} -gt 12 ]] && epoch_s=$((epoch_s / 1000))
-        created_at=$(date -r "$epoch_s" -u +"%Y-%m-%dT%H:%M:%SZ" 2>/dev/null || echo "$created_at")
+        # Cross-platform epoch to ISO
+        if date -r "$epoch_s" -u +"%Y-%m-%dT%H:%M:%SZ" &>/dev/null; then
+            created_at=$(date -r "$epoch_s" -u +"%Y-%m-%dT%H:%M:%SZ")
+        elif date -u -d "@$epoch_s" +"%Y-%m-%dT%H:%M:%SZ" &>/dev/null; then
+            created_at=$(date -u -d "@$epoch_s" +"%Y-%m-%dT%H:%M:%SZ")
+        fi
     fi
     if [[ "$modified_at" =~ ^[0-9]+\.?[0-9]*$ ]]; then
         local epoch_s="${modified_at%%.*}"
         [[ ${#epoch_s} -gt 12 ]] && epoch_s=$((epoch_s / 1000))
-        modified_at=$(date -r "$epoch_s" -u +"%Y-%m-%dT%H:%M:%SZ" 2>/dev/null || echo "$modified_at")
+        if date -r "$epoch_s" -u +"%Y-%m-%dT%H:%M:%SZ" &>/dev/null; then
+            modified_at=$(date -r "$epoch_s" -u +"%Y-%m-%dT%H:%M:%SZ")
+        elif date -u -d "@$epoch_s" +"%Y-%m-%dT%H:%M:%SZ" &>/dev/null; then
+            modified_at=$(date -u -d "@$epoch_s" +"%Y-%m-%dT%H:%M:%SZ")
+        fi
     fi
 
     if [[ "$dry_run" == "true" ]]; then
