@@ -211,10 +211,14 @@ episodic_db_insert_summary() {
     dead_ends=$(episodic_sql_escape "$dead_ends")
     key_insights=$(episodic_sql_escape "$key_insights")
 
+    # Escape session_id for SQL interpolation
+    local safe_session_id
+    safe_session_id=$(episodic_sql_escape "$session_id")
+
     # Get first_prompt and project from sessions table
     local first_prompt project
-    first_prompt=$(episodic_db_exec "SELECT first_prompt FROM sessions WHERE id='$session_id';" "$db")
-    project=$(episodic_db_exec "SELECT project FROM sessions WHERE id='$session_id';" "$db")
+    first_prompt=$(episodic_db_exec "SELECT first_prompt FROM sessions WHERE id='$safe_session_id';" "$db")
+    project=$(episodic_db_exec "SELECT project FROM sessions WHERE id='$safe_session_id';" "$db")
     first_prompt=$(episodic_sql_escape "$first_prompt")
     project=$(episodic_sql_escape "$project")
 
@@ -231,15 +235,15 @@ episodic_db_insert_summary() {
         printf "    session_id, topics, decisions, dead_ends, artifacts_created,\n"
         printf "    key_insights, summary, generated_at, model\n"
         printf ") VALUES (\n"
-        printf "    '%s', '%s', '%s', '%s',\n" "$session_id" "$topics_json" "$decisions_json" "$dead_ends_json"
-        printf "    '%s', '%s', '%s', datetime('now'), '%s'\n" "$artifacts_json" "$insights_json" "$summary_text" "$model"
+        printf "    '%s', '%s', '%s', '%s',\n" "$safe_session_id" "$topics_json" "$decisions_json" "$dead_ends_json"
+        printf "    '%s', '%s', '%s', datetime('now'), '%s'\n" "$artifacts_json" "$insights_json" "$summary_text" "$(episodic_sql_escape "$model")"
         printf ");\n\n"
-        printf "DELETE FROM sessions_fts WHERE session_id = '%s';\n" "$session_id"
+        printf "DELETE FROM sessions_fts WHERE session_id = '%s';\n" "$safe_session_id"
         printf "INSERT INTO sessions_fts (\n"
         printf "    session_id, project, topics, decisions, dead_ends,\n"
         printf "    key_insights, summary, first_prompt\n"
         printf ") VALUES (\n"
-        printf "    '%s', '%s', '%s', '%s', '%s',\n" "$session_id" "$project" "$topics" "$decisions" "$dead_ends"
+        printf "    '%s', '%s', '%s', '%s', '%s',\n" "$safe_session_id" "$project" "$topics" "$decisions" "$dead_ends"
         printf "    '%s', '%s', '%s'\n" "$key_insights" "$summary_text" "$first_prompt"
         printf ");\n"
     } > "$sql_file"
@@ -252,6 +256,9 @@ episodic_db_update_log() {
     local db="$EPISODIC_DB"
     local session_id="$1"
     local status="$2"
+
+    session_id=$(episodic_sql_escape "$session_id")
+    status=$(episodic_sql_escape "$status")
 
     episodic_db_exec_multi "$db" <<SQL
 INSERT OR REPLACE INTO archive_log (session_id, archived_at, status)
@@ -295,6 +302,8 @@ episodic_db_recent() {
     local project="$1"
     local limit="${2:-$EPISODIC_CONTEXT_COUNT}"
 
+    project=$(episodic_sql_escape "$project")
+
     episodic_db_query_json "
 SELECT
     s.id,
@@ -324,8 +333,10 @@ episodic_db_count() {
 episodic_db_is_archived() {
     local db="$EPISODIC_DB"
     local session_id="$1"
+    local safe_id
+    safe_id=$(episodic_sql_escape "$session_id")
     local count
-    count=$(episodic_db_exec "SELECT count(*) FROM sessions WHERE id='$session_id';" "$db")
+    count=$(episodic_db_exec "SELECT count(*) FROM sessions WHERE id='$safe_id';" "$db")
     [[ "$count" -gt 0 ]]
 }
 
