@@ -77,22 +77,61 @@ echo "$results" | jq -r '
     ""
 ' 2>/dev/null
 
-# Output project skills from knowledge repo if available
+# Output project skills from knowledge repo with decay-based injection
 if type episodic_knowledge_is_configured &>/dev/null && episodic_knowledge_is_configured; then
     skills=$(episodic_knowledge_list_skills "$PROJECT" 2>/dev/null)
     if [[ -n "$skills" ]]; then
-        echo ""
-        echo "# Project Skills (${PROJECT})"
-        echo ""
+        now_epoch=$(date +%s)
+        fresh_seconds=$(( ${EPISODIC_SKILL_FRESH_DAYS:-30} * 86400 ))
+        aging_seconds=$(( ${EPISODIC_SKILL_AGING_DAYS:-90} * 86400 ))
+
+        fresh_skills=""
+        aging_skills=""
+
         while IFS= read -r skill_name; do
-            # Read first line after frontmatter as description
             skill_file="$EPISODIC_KNOWLEDGE_DIR/$PROJECT/skills/${skill_name}.md"
-            if [[ -f "$skill_file" ]]; then
-                desc=$(sed -n '/^---$/,/^---$/d; /^#/{s/^# *//;p;q;}' "$skill_file" 2>/dev/null || echo "$skill_name")
-                echo "- $skill_name: $desc"
+            [[ -f "$skill_file" ]] || continue
+
+            # Parse generated date from YAML frontmatter
+            gen_date=$(grep '^generated:' "$skill_file" 2>/dev/null | head -1 | sed 's/^generated: *//')
+            if [[ -n "$gen_date" ]]; then
+                # Convert YYYY-MM-DD to epoch (macOS date -j)
+                gen_epoch=$(date -j -f "%Y-%m-%d" "$gen_date" +%s 2>/dev/null || echo "0")
+            else
+                gen_epoch=0
             fi
+
+            age_seconds=$(( now_epoch - gen_epoch ))
+
+            if [[ $age_seconds -le $fresh_seconds ]]; then
+                # Fresh: inject full content (strip frontmatter)
+                content=$(awk 'BEGIN{f=0} /^---$/{f++; next} f>=2' "$skill_file" 2>/dev/null)
+                fresh_skills+="### ${skill_name}"$'\n'"${content}"$'\n\n'
+            elif [[ $age_seconds -le $aging_seconds ]]; then
+                # Aging: one-line summary
+                desc=$(sed -n '/^---$/,/^---$/d; /^#/{s/^# *//;p;q;}' "$skill_file" 2>/dev/null || echo "$skill_name")
+                aging_skills+="- ${skill_name}: ${desc}"$'\n'
+            fi
+            # Stale (>90 days): omitted entirely, still searchable via /recall
         done <<< "$skills"
-        echo ""
+
+        if [[ -n "$fresh_skills" || -n "$aging_skills" ]]; then
+            echo ""
+            echo "# Project Skills (${PROJECT})"
+        fi
+
+        if [[ -n "$fresh_skills" ]]; then
+            echo ""
+            printf '%s' "$fresh_skills"
+        fi
+
+        if [[ -n "$aging_skills" ]]; then
+            echo ""
+            echo "## Older Skills (summary only, use /recall for details)"
+            echo ""
+            printf '%s' "$aging_skills"
+            echo ""
+        fi
     fi
 fi
 
