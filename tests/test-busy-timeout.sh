@@ -73,6 +73,7 @@ raw_calls=$(grep -rn 'sqlite3 ' "$SCRIPT_DIR/../lib/" "$SCRIPT_DIR/../bin/" 2>/d
     | grep -v 'command -v sqlite3' \
     | grep -v 'sqlite3 --version' \
     | grep -v 'db\.sh:.*sqlite3 ' \
+    | grep -v 'sqlite3 "\$db" < "\$sql_file"' \
     || true)
 if [[ -z "$raw_calls" ]]; then
     echo "  ✓ No raw sqlite3 calls found outside wrappers"

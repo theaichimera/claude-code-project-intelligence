@@ -40,7 +40,7 @@ if [[ -z "$PROJECT" ]]; then
 fi
 
 # Escape for SQL single-quote interpolation
-SAFE_PROJECT="${PROJECT//\'/\'\'}"
+SAFE_PROJECT=$(episodic_sql_escape "$PROJECT")
 
 # Check DB exists
 if [[ ! -f "$EPISODIC_DB" ]]; then
