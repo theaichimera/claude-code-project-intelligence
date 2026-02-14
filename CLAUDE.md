@@ -32,6 +32,10 @@ A self-contained episodic memory system for Claude Code, implemented entirely in
 ./tests/test-schema-consistency.sh # No duplicate schema definitions
 ./tests/test-sql-escape-context.sh # SQL escaping in episodic-context
 ./tests/test-knowledge-init-env.sh # sed portability in knowledge init
+./tests/test-archive-retry.sh      # Failed summaries leave retryable state
+./tests/test-fts5-escape.sh        # FTS5 MATCH injection prevention
+./tests/test-insert-session-escape.sh # SQL escaping in session inserts
+./tests/test-git-conflict-safety.sh   # Git rebase conflict marker detection
 
 # Install (sets up hooks, DB, skills)
 ./install.sh
@@ -90,12 +94,14 @@ Thresholds configurable via `EPISODIC_SKILL_FRESH_DAYS` / `EPISODIC_SKILL_AGING_
   - `episodic_db_exec_multi <db> <<'SQL'` — multi-statement heredoc with busy_timeout
   - For temp-file based SQL (large text), prepend `.timeout ${EPISODIC_BUSY_TIMEOUT}` in the file and use `sqlite3 "$db" < "$sql_file"`
 - **SQL string escaping:** Use `episodic_sql_escape "$value"` (defined in `db.sh`). Never use inline `${var//\'/\'\'}`.
+- **FTS5 query escaping:** Use `episodic_fts5_escape "$user_input"` (defined in `db.sh`) before passing user input to FTS5 MATCH. It wraps each token in double quotes to neutralize FTS5 operators (OR, AND, NOT, NEAR, `*`, `:`). Apply FTS5 escape first, then SQL escape: `query=$(episodic_sql_escape "$(episodic_fts5_escape "$input")")`.
 - **Large text in SQL:** For inserts with potentially large text (summaries, extracted document text), write SQL to a temp file via `printf` instead of using heredoc expansion. Use `trap 'rm -f "$sql_file"' RETURN` for cleanup. See `episodic_db_insert_summary` and `episodic_index_file` for examples.
 - **Knowledge repo locking:** `episodic_knowledge_lock`/`episodic_knowledge_unlock` in `knowledge.sh` serialize concurrent git operations using `mkdir`-based atomic locks with PID stale detection.
 - **Cross-platform portability:**
   - Use `sha256sum` with `shasum -a 256` fallback (Linux vs macOS)
   - Use `sed` with temp file instead of `sed -i ''` (macOS-only flag)
   - Use `stat -c%s` (Linux) vs `stat -f%z` (macOS) for file sizes
+- **SQLite busy timeout:** `EPISODIC_BUSY_TIMEOUT` (default 5000ms) is set in `db.sh`, not `config.sh`. All db wrappers apply it automatically. For raw `sqlite3` calls via temp files, prepend `.timeout ${EPISODIC_BUSY_TIMEOUT}`.
 - FTS5 virtual tables need special CREATE handling (check `sqlite_master` first)
 - Schema is defined once in `episodic_db_init` in `db.sh` — no other module should define tables
 - Tests override `EPISODIC_DB`, `EPISODIC_LOG`, and `EPISODIC_ARCHIVE_DIR` to temp paths and use `trap cleanup EXIT`
