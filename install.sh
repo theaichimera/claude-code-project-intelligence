@@ -133,13 +133,7 @@ fi
 ln -s "$EPISODIC_ROOT/skills/save-skill" "$SAVE_LINK"
 echo "  ✓ /save-skill skill installed"
 
-# Install /deep-dive
-DEEPDIVE_LINK="$SKILLS_DIR/deep-dive"
-if [[ -L "$DEEPDIVE_LINK" || -d "$DEEPDIVE_LINK" ]]; then
-    rm -rf "$DEEPDIVE_LINK"
-fi
-ln -s "$EPISODIC_ROOT/skills/deep-dive" "$DEEPDIVE_LINK"
-echo "  ✓ /deep-dive skill installed"
+# /deep-dive removed — codebase analysis is now via /progress (Project Understanding)
 
 # Install /progress
 PROGRESS_LINK="$SKILLS_DIR/progress"

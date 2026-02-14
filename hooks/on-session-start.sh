@@ -35,12 +35,12 @@ if index_bin=$(_pi_bin index 2>/dev/null); then
     "$index_bin" --all &>/dev/null &
 fi
 
-# Auto-generate deep dive on first visit to a project (background, non-blocking)
-if dive_bin=$(_pi_bin deep-dive 2>/dev/null); then
+# Auto-create Project Understanding progression on first visit (background, non-blocking)
+if analyze_bin=$(_pi_bin analyze 2>/dev/null); then
     PROJECT_NAME=$(basename "${CWD:-$(pwd)}")
     KNOWLEDGE_DIR="${PI_KNOWLEDGE_DIR:-${EPISODIC_KNOWLEDGE_DIR:-$HOME/.claude/knowledge}}"
-    if [[ ! -f "$KNOWLEDGE_DIR/$PROJECT_NAME/deep-dive.md" ]]; then
-        "$dive_bin" --project "$PROJECT_NAME" --path "${CWD:-$(pwd)}" &>/dev/null &
+    if [[ ! -d "$KNOWLEDGE_DIR/$PROJECT_NAME/progressions/project-understanding" ]]; then
+        "$analyze_bin" --project "$PROJECT_NAME" --path "${CWD:-$(pwd)}" &>/dev/null &
     fi
 fi
 
