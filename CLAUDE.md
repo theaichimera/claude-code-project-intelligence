@@ -21,6 +21,7 @@ A self-contained episodic memory system for Claude Code, implemented entirely in
 ./tests/test-synthesize.sh      # Skill generation + auto-synthesis
 ./tests/test-index.sh           # Document indexing + search
 ./tests/test-project-name.sh    # Project name derivation from paths
+./tests/test-deep-dive.sh       # Deep-dive context collection + read/write
 
 # Run individual regression tests (not in run-all.sh)
 ./tests/test-busy-timeout.sh       # SQLite busy_timeout wrappers
@@ -72,7 +73,20 @@ Tests create temp databases in `/tmp` and clean up via `trap`. Most tests don't 
 - `summarize.sh` — Anthropic API call (supports extended thinking). Sends extracted transcript, gets structured JSON summary.
 - `knowledge.sh` — Git operations for the knowledge repo (clone, pull, push, conflict handling). All git operations serialized via lockfile.
 - `synthesize.sh` — Opus-powered skill generation. Auto-synthesis check (`EPISODIC_SYNTHESIZE_EVERY`), backfill suppression via `EPISODIC_BACKFILL_MODE`.
+- `deep-dive.sh` — Codebase deep-dive generation. Context collection (tree, manifests, entry points, README, Docker), Opus API with extended thinking, YAML frontmatter write/read.
 - `index.sh` — Document text extraction (format-aware: direct read, pdftotext, html-strip, textutil/pandoc for docx) + FTS5 indexing with SHA-256 change detection. Schema is owned by `db.sh` — this module delegates `episodic_db_init`.
+
+### Deep Dive System
+
+Deep dives are comprehensive codebase analysis documents that answer "what is this project?" — covering architecture, tech stack, patterns, and gotchas. Generated via Opus with extended thinking.
+
+- `lib/deep-dive.sh` — Core: context collection, API call, read/write/exists
+- `bin/episodic-deep-dive` — CLI: `--project`, `--path`, `--refresh`, `--force`, `--dry-run`
+- `skills/deep-dive/SKILL.md` — Interactive `/deep-dive` command
+- Auto-triggered on first visit to a project (background, in `on-session-start.sh`)
+- Stored at `~/.claude/knowledge/<project>/deep-dive.md` with YAML frontmatter
+- Injected into context between skills and documents
+- Config: `EPISODIC_DEEP_DIVE_MODEL` (Opus 4.6), `EPISODIC_DEEP_DIVE_THINKING_BUDGET` (16K), `EPISODIC_DEEP_DIVE_TIMEOUT` (300s)
 
 ### Skill Decay System
 
