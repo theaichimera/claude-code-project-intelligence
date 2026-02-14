@@ -1,0 +1,9 @@
+{
+  "name": "project-intelligence",
+  "version": "1.0.0",
+  "description": "Persistent project intelligence for Claude Code. Sessions get smarter over time with episodic memory, skill synthesis, and reasoning progressions.",
+  "author": "theaichimera",
+  "repository": "https://github.com/theaichimera/claude-code-project-intelligence",
+  "license": "MIT",
+  "minClaudeCodeVersion": "2.0.0"
+}
