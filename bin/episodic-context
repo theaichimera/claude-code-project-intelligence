@@ -162,6 +162,15 @@ if type episodic_knowledge_is_configured &>/dev/null && episodic_knowledge_is_co
     fi
 fi
 
+# Output deep-dive for project if available
+if [[ -f "$EPISODIC_KNOWLEDGE_DIR/$PROJECT/deep-dive.md" ]]; then
+    echo ""
+    echo "# Codebase Deep Dive (${PROJECT})"
+    echo ""
+    awk 'BEGIN{f=0} /^---$/{f++; next} f>=2' "$EPISODIC_KNOWLEDGE_DIR/$PROJECT/deep-dive.md"
+    echo ""
+fi
+
 # Output indexed documents for project if available
 doc_count=$(episodic_db_exec "SELECT count(*) FROM documents WHERE project='$SAFE_PROJECT';" 2>/dev/null || echo "0")
 if [[ "$doc_count" -gt 0 ]]; then

@@ -26,6 +26,15 @@ EPISODIC_OPUS_MODEL="${EPISODIC_OPUS_MODEL:-claude-opus-4-5-20251101}"
 # Vision model for PDF/image OCR during document indexing
 EPISODIC_INDEX_VISION_MODEL="${EPISODIC_INDEX_VISION_MODEL:-claude-haiku-4-5-20251001}"
 
+# Deep dive model: used for comprehensive codebase analysis
+EPISODIC_DEEP_DIVE_MODEL="${EPISODIC_DEEP_DIVE_MODEL:-claude-opus-4-6}"
+
+# Thinking budget for deep-dive generation (tokens)
+EPISODIC_DEEP_DIVE_THINKING_BUDGET="${EPISODIC_DEEP_DIVE_THINKING_BUDGET:-16000}"
+
+# API timeout for deep-dive generation (seconds) — longer due to extended thinking
+EPISODIC_DEEP_DIVE_TIMEOUT="${EPISODIC_DEEP_DIVE_TIMEOUT:-300}"
+
 EPISODIC_SYNTHESIZE_EVERY="${EPISODIC_SYNTHESIZE_EVERY:-2}"
 
 # Skill decay thresholds (days) for context injection

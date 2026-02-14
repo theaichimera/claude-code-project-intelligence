@@ -20,6 +20,15 @@ if [[ -f "$EPISODIC_ROOT/bin/episodic-index" ]]; then
     "$EPISODIC_ROOT/bin/episodic-index" --all &>/dev/null &
 fi
 
+# Auto-generate deep dive on first visit to a project (background, non-blocking)
+if [[ -f "$EPISODIC_ROOT/bin/episodic-deep-dive" ]]; then
+    PROJECT_NAME=$(basename "${CWD:-$(pwd)}")
+    KNOWLEDGE_DIR="${EPISODIC_KNOWLEDGE_DIR:-$HOME/.claude/knowledge}"
+    if [[ ! -f "$KNOWLEDGE_DIR/$PROJECT_NAME/deep-dive.md" ]]; then
+        "$EPISODIC_ROOT/bin/episodic-deep-dive" --project "$PROJECT_NAME" --path "${CWD:-$(pwd)}" &>/dev/null &
+    fi
+fi
+
 # Inject recent session context + skills for this project
 if [[ -f "$EPISODIC_ROOT/bin/episodic-context" ]]; then
     "$EPISODIC_ROOT/bin/episodic-context" 2>/dev/null || true

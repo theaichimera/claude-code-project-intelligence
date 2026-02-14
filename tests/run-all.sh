@@ -9,7 +9,7 @@ echo ""
 
 passed=0
 failed=0
-tests=("test-project-name" "test-init" "test-archive" "test-query" "test-roundtrip" "test-knowledge" "test-synthesize" "test-index")
+tests=("test-project-name" "test-init" "test-archive" "test-query" "test-roundtrip" "test-knowledge" "test-synthesize" "test-index" "test-deep-dive")
 
 regression_tests=(
     "test-busy-timeout"
