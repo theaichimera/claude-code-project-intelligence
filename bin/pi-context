@@ -5,6 +5,7 @@ set -euo pipefail
 BIN_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 source "$BIN_DIR/../lib/db.sh"
 [[ -f "$BIN_DIR/../lib/knowledge.sh" ]] && source "$BIN_DIR/../lib/knowledge.sh"
+[[ -f "$BIN_DIR/../lib/progression.sh" ]] && source "$BIN_DIR/../lib/progression.sh"
 
 usage() {
     cat <<EOF
@@ -57,6 +58,15 @@ fi
 if [[ "$FORMAT" == "json" ]]; then
     echo "$results"
     exit 0
+fi
+
+# Output active progressions for this project (highest-value context, goes first)
+if type pi_progression_generate_context &>/dev/null; then
+    prog_context=$(pi_progression_generate_context "$PROJECT" 2>/dev/null)
+    if [[ -n "$prog_context" ]]; then
+        echo "$prog_context"
+        echo ""
+    fi
 fi
 
 # Format as text block for context injection
