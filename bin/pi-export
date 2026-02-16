@@ -1,0 +1,158 @@
+#!/usr/bin/env bash
+# pi-export: Export session archives + database for transfer to another machine
+set -euo pipefail
+
+BIN_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+source "$BIN_DIR/../lib/config.sh"
+
+usage() {
+    cat <<EOF
+Usage: pi-export [OPTIONS] [OUTPUT_PATH]
+
+Export session archives and database for transfer to another machine.
+
+Creates a .tar.gz containing:
+  - All JSONL session archives (organized by project)
+  - SQLite database (sessions, summaries, FTS5 index)
+  - Export metadata (source machine, date, knowledge repo URL)
+
+The knowledge repo is NOT included — it syncs separately via Git.
+
+Options:
+  --no-db             Skip database (archives only — use pi-backfill on import to rebuild)
+  --project PROJECT   Export only a specific project
+  --dry-run           Show what would be exported without creating the archive
+  -h, --help          Show this help
+
+Arguments:
+  OUTPUT_PATH         Output file path (default: pi-export-YYYY-MM-DD.tar.gz in current dir)
+
+Examples:
+  pi-export                              # Export everything to ./pi-export-2026-02-14.tar.gz
+  pi-export ~/Desktop/pi-backup.tar.gz   # Export to specific path
+  pi-export --project myapp              # Export only myapp sessions
+  pi-export --dry-run                    # Preview what would be exported
+EOF
+}
+
+NO_DB=""
+PROJECT_FILTER=""
+DRY_RUN=""
+OUTPUT_PATH=""
+
+while [[ $# -gt 0 ]]; do
+    case "$1" in
+        --no-db) NO_DB="true"; shift ;;
+        --project) PROJECT_FILTER="$2"; shift 2 ;;
+        --dry-run) DRY_RUN="true"; shift ;;
+        -h|--help) usage; exit 0 ;;
+        -*) echo "Unknown option: $1" >&2; exit 1 ;;
+        *) OUTPUT_PATH="$1"; shift ;;
+    esac
+done
+
+# Default output path
+if [[ -z "$OUTPUT_PATH" ]]; then
+    OUTPUT_PATH="pi-export-$(date +%Y-%m-%d).tar.gz"
+fi
+
+ARCHIVE_DIR="$PI_ARCHIVE_DIR"
+DB_PATH="$PI_DB"
+
+# Validate source directories exist
+if [[ ! -d "$ARCHIVE_DIR" ]]; then
+    echo "ERROR: Archive directory not found: $ARCHIVE_DIR" >&2
+    exit 1
+fi
+
+# Count what we're exporting
+if [[ -n "$PROJECT_FILTER" ]]; then
+    PROJECT_FILTER=$(episodic_sanitize_name "$PROJECT_FILTER")
+    if [[ ! -d "$ARCHIVE_DIR/$PROJECT_FILTER" ]]; then
+        echo "ERROR: No archives found for project: $PROJECT_FILTER" >&2
+        exit 1
+    fi
+    session_count=$(find "$ARCHIVE_DIR/$PROJECT_FILTER" -name '*.jsonl' 2>/dev/null | wc -l | tr -d ' ')
+    project_count=1
+else
+    session_count=$(find "$ARCHIVE_DIR" -name '*.jsonl' 2>/dev/null | wc -l | tr -d ' ')
+    project_count=$(find "$ARCHIVE_DIR" -mindepth 1 -maxdepth 1 -type d 2>/dev/null | wc -l | tr -d ' ')
+fi
+
+# Calculate archive size
+if [[ -n "$PROJECT_FILTER" ]]; then
+    archive_size=$(du -sh "$ARCHIVE_DIR/$PROJECT_FILTER" 2>/dev/null | cut -f1)
+else
+    archive_size=$(du -sh "$ARCHIVE_DIR" 2>/dev/null | cut -f1)
+fi
+
+db_size="(skipped)"
+if [[ "$NO_DB" != "true" && -f "$DB_PATH" ]]; then
+    db_size=$(du -sh "$DB_PATH" 2>/dev/null | cut -f1)
+fi
+
+echo "Export summary:"
+echo "  Sessions:  $session_count across $project_count project(s)"
+echo "  Archives:  $archive_size"
+echo "  Database:  $db_size"
+echo "  Output:    $OUTPUT_PATH"
+
+if [[ "$DRY_RUN" == "true" ]]; then
+    echo ""
+    echo "Projects:"
+    if [[ -n "$PROJECT_FILTER" ]]; then
+        echo "  $PROJECT_FILTER ($(find "$ARCHIVE_DIR/$PROJECT_FILTER" -name '*.jsonl' | wc -l | tr -d ' ') sessions)"
+    else
+        for pdir in "$ARCHIVE_DIR"/*/; do
+            [[ -d "$pdir" ]] || continue
+            pname=$(basename "$pdir")
+            pcount=$(find "$pdir" -name '*.jsonl' 2>/dev/null | wc -l | tr -d ' ')
+            echo "  $pname ($pcount sessions)"
+        done
+    fi
+    echo ""
+    echo "Dry run — no archive created."
+    exit 0
+fi
+
+# Create temp directory for staging
+staging=$(mktemp -d)
+trap 'rm -rf "$staging"' EXIT
+
+# Write metadata
+{
+    printf 'export_date: "%s"\n' "$(date -u +"%Y-%m-%dT%H:%M:%SZ")"
+    printf 'source_machine: "%s"\n' "$(hostname)"
+    printf 'source_user: "%s"\n' "$USER"
+    printf 'session_count: %d\n' "$session_count"
+    printf 'project_count: %d\n' "$project_count"
+    printf 'knowledge_repo: "%s"\n' "${PI_KNOWLEDGE_REPO:-${EPISODIC_KNOWLEDGE_REPO:-}}"
+    printf 'archive_dir: "%s"\n' "$ARCHIVE_DIR"
+    printf 'db_path: "%s"\n' "$DB_PATH"
+    if [[ -n "$PROJECT_FILTER" ]]; then
+        printf 'project_filter: "%s"\n' "$PROJECT_FILTER"
+    fi
+} > "$staging/export-metadata.yaml"
+
+# Copy archives
+mkdir -p "$staging/archives"
+if [[ -n "$PROJECT_FILTER" ]]; then
+    cp -R "$ARCHIVE_DIR/$PROJECT_FILTER" "$staging/archives/"
+else
+    cp -R "$ARCHIVE_DIR"/* "$staging/archives/" 2>/dev/null || true
+fi
+
+# Copy database
+if [[ "$NO_DB" != "true" && -f "$DB_PATH" ]]; then
+    cp "$DB_PATH" "$staging/episodic.db"
+fi
+
+# Create tar.gz
+tar -czf "$OUTPUT_PATH" -C "$staging" .
+
+final_size=$(du -sh "$OUTPUT_PATH" 2>/dev/null | cut -f1)
+echo ""
+echo "Export complete: $OUTPUT_PATH ($final_size)"
+echo ""
+echo "To import on another machine:"
+echo "  pi-import $OUTPUT_PATH"

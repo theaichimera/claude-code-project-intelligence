@@ -1,0 +1,257 @@
+#!/usr/bin/env bash
+# pi-import: Import session archives from an export file
+set -euo pipefail
+
+BIN_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+source "$BIN_DIR/../lib/config.sh"
+source "$BIN_DIR/../lib/db.sh"
+
+usage() {
+    cat <<EOF
+Usage: pi-import [OPTIONS] <EXPORT_FILE>
+
+Import session archives from a pi-export file onto this machine.
+
+Does:
+  1. Extracts JSONL archives to the local archive directory (merges with existing)
+  2. Imports the database if included (merges sessions, skips duplicates)
+  3. Reports what was imported
+
+The knowledge repo is NOT affected — sync it separately via:
+  pi-knowledge-init <repo-url>
+
+Options:
+  --dry-run           Show what would be imported without making changes
+  --no-db             Skip database import (use pi-backfill to rebuild from archives)
+  --backfill          Run pi-backfill after import to generate missing summaries
+  -h, --help          Show this help
+
+Examples:
+  pi-import pi-export-2026-02-14.tar.gz              # Import everything
+  pi-import --dry-run pi-export-2026-02-14.tar.gz     # Preview
+  pi-import --backfill pi-export-2026-02-14.tar.gz    # Import + generate summaries
+EOF
+}
+
+DRY_RUN=""
+NO_DB=""
+BACKFILL=""
+EXPORT_FILE=""
+
+while [[ $# -gt 0 ]]; do
+    case "$1" in
+        --dry-run) DRY_RUN="true"; shift ;;
+        --no-db) NO_DB="true"; shift ;;
+        --backfill) BACKFILL="true"; shift ;;
+        -h|--help) usage; exit 0 ;;
+        -*) echo "Unknown option: $1" >&2; exit 1 ;;
+        *) EXPORT_FILE="$1"; shift ;;
+    esac
+done
+
+if [[ -z "$EXPORT_FILE" ]]; then
+    echo "ERROR: Export file required" >&2
+    usage >&2
+    exit 1
+fi
+
+if [[ ! -f "$EXPORT_FILE" ]]; then
+    echo "ERROR: File not found: $EXPORT_FILE" >&2
+    exit 1
+fi
+
+ARCHIVE_DIR="$PI_ARCHIVE_DIR"
+DB_PATH="$PI_DB"
+
+# Extract to temp directory first
+staging=$(mktemp -d)
+trap 'rm -rf "$staging"' EXIT
+
+echo "Extracting $EXPORT_FILE..."
+tar -xzf "$EXPORT_FILE" -C "$staging"
+
+# Read metadata
+if [[ -f "$staging/export-metadata.yaml" ]]; then
+    echo ""
+    echo "Export metadata:"
+    while IFS=': ' read -r key value; do
+        [[ -z "$key" || "$key" == \#* ]] && continue
+        value="${value#\"}"
+        value="${value%\"}"
+        printf '  %-20s %s\n' "$key" "$value"
+    done < "$staging/export-metadata.yaml"
+    echo ""
+fi
+
+# Count what's in the export
+exported_sessions=0
+exported_projects=0
+if [[ -d "$staging/archives" ]]; then
+    exported_sessions=$(find "$staging/archives" -name '*.jsonl' 2>/dev/null | wc -l | tr -d ' ')
+    exported_projects=$(find "$staging/archives" -mindepth 1 -maxdepth 1 -type d 2>/dev/null | wc -l | tr -d ' ')
+fi
+
+has_db="no"
+if [[ -f "$staging/episodic.db" ]]; then
+    has_db="yes"
+fi
+
+echo "Export contains:"
+echo "  Sessions:  $exported_sessions across $exported_projects project(s)"
+echo "  Database:  $has_db"
+
+if [[ "$exported_sessions" -eq 0 ]]; then
+    echo ""
+    echo "Nothing to import."
+    exit 0
+fi
+
+# Count how many we already have locally
+existing_before=0
+if [[ -d "$ARCHIVE_DIR" ]]; then
+    existing_before=$(find "$ARCHIVE_DIR" -name '*.jsonl' 2>/dev/null | wc -l | tr -d ' ')
+fi
+
+if [[ "$DRY_RUN" == "true" ]]; then
+    echo ""
+    echo "Would import to: $ARCHIVE_DIR"
+    echo ""
+    echo "Projects in export:"
+    for pdir in "$staging/archives"/*/; do
+        [[ -d "$pdir" ]] || continue
+        pname=$(basename "$pdir")
+        pcount=$(find "$pdir" -name '*.jsonl' 2>/dev/null | wc -l | tr -d ' ')
+
+        # Check how many already exist locally
+        local_count=0
+        if [[ -d "$ARCHIVE_DIR/$pname" ]]; then
+            local_count=$(find "$ARCHIVE_DIR/$pname" -name '*.jsonl' 2>/dev/null | wc -l | tr -d ' ')
+        fi
+
+        # Count new files
+        new_count=0
+        while IFS= read -r f; do
+            fname=$(basename "$f")
+            if [[ ! -f "$ARCHIVE_DIR/$pname/$fname" ]]; then
+                new_count=$((new_count + 1))
+            fi
+        done < <(find "$pdir" -name '*.jsonl' 2>/dev/null)
+
+        echo "  $pname: $pcount in export, $local_count local, $new_count new"
+    done
+    echo ""
+    echo "Dry run — no changes made."
+    exit 0
+fi
+
+# Initialize DB if it doesn't exist
+if [[ ! -f "$DB_PATH" ]]; then
+    echo "Initializing database..."
+    episodic_db_init "$DB_PATH" >/dev/null 2>&1
+fi
+
+# Import archives — copy new files, skip existing (by session ID filename)
+echo ""
+echo "Importing archives..."
+imported=0
+skipped=0
+
+mkdir -p "$ARCHIVE_DIR"
+
+for pdir in "$staging/archives"/*/; do
+    [[ -d "$pdir" ]] || continue
+    pname=$(basename "$pdir")
+
+    # Sanitize project name for safety
+    safe_pname=$(episodic_sanitize_name "$pname")
+    if [[ "$safe_pname" != "$pname" ]]; then
+        echo "  WARNING: Skipping project with unsafe name: $pname" >&2
+        continue
+    fi
+
+    mkdir -p "$ARCHIVE_DIR/$pname"
+
+    while IFS= read -r src_file; do
+        fname=$(basename "$src_file")
+        dest_file="$ARCHIVE_DIR/$pname/$fname"
+
+        if [[ -f "$dest_file" ]]; then
+            skipped=$((skipped + 1))
+        else
+            cp "$src_file" "$dest_file"
+            imported=$((imported + 1))
+        fi
+    done < <(find "$pdir" -name '*.jsonl' 2>/dev/null)
+done
+
+echo "  Imported: $imported new sessions"
+echo "  Skipped:  $skipped already present"
+
+# Import database (merge sessions from exported DB into local DB)
+db_imported=0
+if [[ "$NO_DB" != "true" && "$has_db" == "yes" ]]; then
+    echo ""
+    echo "Merging database..."
+
+    exported_db="$staging/episodic.db"
+
+    # Count sessions in exported DB
+    exported_db_count=$(episodic_db_exec "SELECT count(*) FROM sessions;" "$exported_db" 2>/dev/null || echo "0")
+    echo "  Exported DB has $exported_db_count sessions"
+
+    # Attach exported DB and insert missing sessions
+    local sql_file
+    sql_file=$(mktemp)
+    {
+        printf "ATTACH DATABASE '%s' AS import_db;\n" "$exported_db"
+        printf "BEGIN;\n"
+        # Import sessions that don't exist locally
+        printf "INSERT OR IGNORE INTO sessions SELECT * FROM import_db.sessions;\n"
+        # Import summaries that don't exist locally
+        printf "INSERT OR IGNORE INTO summaries SELECT * FROM import_db.summaries;\n"
+        # Import archive_log entries that don't exist locally
+        printf "INSERT OR IGNORE INTO archive_log SELECT * FROM import_db.archive_log;\n"
+        # Rebuild FTS index for new sessions
+        printf "INSERT OR IGNORE INTO sessions_fts (session_id, project, topics, decisions, dead_ends, key_insights, summary, first_prompt) SELECT sum.session_id, s.project, sum.topics, sum.decisions, sum.dead_ends, sum.key_insights, sum.summary, s.first_prompt FROM import_db.summaries sum JOIN import_db.sessions s ON s.id = sum.session_id WHERE sum.session_id NOT IN (SELECT session_id FROM sessions_fts);\n"
+        printf "COMMIT;\n"
+        printf "DETACH DATABASE import_db;\n"
+    } > "$sql_file"
+
+    cat "$sql_file" | episodic_db_exec_multi "$DB_PATH" 2>/dev/null || {
+        echo "  WARNING: Database merge had errors (non-fatal — archives are imported)" >&2
+    }
+    rm -f "$sql_file"
+
+    local_count_after=$(episodic_db_exec "SELECT count(*) FROM sessions;" "$DB_PATH" 2>/dev/null || echo "?")
+    echo "  Local DB now has $local_count_after sessions"
+fi
+
+# Summary
+existing_after=$(find "$ARCHIVE_DIR" -name '*.jsonl' 2>/dev/null | wc -l | tr -d ' ')
+
+echo ""
+echo "Import complete:"
+echo "  Archives: $existing_before before, $existing_after after (+$imported new)"
+echo "  Location: $ARCHIVE_DIR"
+
+# Optional backfill
+if [[ "$BACKFILL" == "true" ]]; then
+    echo ""
+    echo "Running backfill to generate missing summaries..."
+    "$BIN_DIR/pi-backfill" --no-summary 2>&1 || true
+    echo "Backfill complete. Run 'pi-backfill --retry-summaries' to generate summaries for imported sessions."
+fi
+
+# Show knowledge repo hint if not configured
+if [[ -z "${PI_KNOWLEDGE_REPO:-${EPISODIC_KNOWLEDGE_REPO:-}}" ]]; then
+    # Check if export metadata has a repo URL
+    repo_url=""
+    if [[ -f "$staging/export-metadata.yaml" ]]; then
+        repo_url=$(grep '^knowledge_repo:' "$staging/export-metadata.yaml" 2>/dev/null | sed 's/^knowledge_repo: *"//;s/"$//' || true)
+    fi
+    if [[ -n "$repo_url" && "$repo_url" != "" ]]; then
+        echo ""
+        echo "Tip: The export was created with knowledge repo: $repo_url"
+        echo "  To sync skills and progressions: pi-knowledge-init $repo_url"
+    fi
+fi
