@@ -105,6 +105,7 @@ if [[ "$REFRESH" == "true" && -d "$prog_dir" ]]; then
 
     # Write to temp file and add as deepening document
     tmp_content=$(mktemp)
+    trap 'rm -f "$tmp_content"' EXIT
     printf '%s\n' "$content" > "$tmp_content"
     pi_progression_add "$PROJECT" "$TOPIC" "$doc_count" "Updated Codebase Analysis" "deepening" "$tmp_content"
     rm -f "$tmp_content"
@@ -132,6 +133,7 @@ else
 
     # Write content to temp file and add as baseline
     tmp_content=$(mktemp)
+    trap 'rm -f "$tmp_content"' EXIT
     printf '%s\n' "$content" > "$tmp_content"
     pi_progression_add "$PROJECT" "$TOPIC" 0 "Codebase Analysis" "baseline" "$tmp_content"
     rm -f "$tmp_content"

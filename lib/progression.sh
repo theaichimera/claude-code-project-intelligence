@@ -78,8 +78,10 @@ _pi_yaml_get() {
 # Usage: _pi_yaml_set <file> <key> <value>
 _pi_yaml_set() {
     local file="$1" key="$2" value="$3"
-    # Escape double quotes in value for YAML safety
-    value="${value//\"/\\\"}"
+    # Escape for YAML double-quoted scalar safety
+    value="${value//\\/\\\\}"     # backslashes first
+    value="${value//\"/\\\"}"     # double quotes
+    value=$(printf '%s' "$value" | tr -d '\n\r')  # strip newlines
     local yaml_tmp
     yaml_tmp=$(mktemp)
 
@@ -126,23 +128,34 @@ pi_progression_create() {
         return 0
     fi
 
-    mkdir -p "$dir"
+    mkdir -p -m 700 "$dir"
 
     local today
     today=$(date -u +"%Y-%m-%d")
 
-    local safe_topic="${topic//\"/\\\"}"
-    cat > "$dir/progression.yaml" <<EOF
-topic: "$safe_topic"
-project: $project
-status: active
-created: $today
-updated: $today
-current_position: ""
-corrections: []
-open_questions: []
-documents: []
-EOF
+    # Sanitize topic for YAML safety: escape quotes, strip newlines/backslashes
+    local safe_topic="${topic//\\/\\\\}"
+    safe_topic="${safe_topic//\"/\\\"}"
+    safe_topic=$(printf '%s' "$safe_topic" | tr -d '\n\r')
+
+    # Refuse to write to symlinks
+    if [[ -L "$dir/progression.yaml" ]]; then
+        episodic_log "ERROR" "Refusing to write to symlink: $dir/progression.yaml"
+        return 1
+    fi
+
+    # Use printf (not expanding heredoc) to prevent shell injection via topic name
+    {
+        printf 'topic: "%s"\n' "$safe_topic"
+        printf 'project: %s\n' "$project"
+        printf 'status: active\n'
+        printf 'created: %s\n' "$today"
+        printf 'updated: %s\n' "$today"
+        printf 'current_position: ""\n'
+        printf 'corrections: []\n'
+        printf 'open_questions: []\n'
+        printf 'documents: []\n'
+    } > "$dir/progression.yaml"
 
     episodic_log "INFO" "Created progression: $project / $topic at $dir"
     echo "$dir"
@@ -183,6 +196,12 @@ pi_progression_add() {
 
     local doc_path="$dir/$filename"
 
+    # Refuse to write to symlinks
+    if [[ -L "$doc_path" ]]; then
+        episodic_log "ERROR" "Refusing to write to symlink: $doc_path"
+        return 1
+    fi
+
     # Write content
     if [[ "$content_file" == "-" ]]; then
         cat > "$doc_path"
@@ -213,10 +232,18 @@ pi_progression_add() {
         rm -f "$add_tmp" 2>/dev/null
     fi
 
+    # Sanitize title for YAML: escape quotes, strip newlines/backslashes
+    local safe_title="${title//\\/\\\\}"
+    safe_title="${safe_title//\"/\\\"}"
+    safe_title=$(printf '%s' "$safe_title" | tr -d '\n\r')
+
+    # Validate doc_number is numeric
+    [[ "$doc_number" =~ ^[0-9]+$ ]] || doc_number=0
+
     # Append document entry
     {
         printf '  - id: "%02d"\n' "$doc_number"
-        printf '    title: "%s"\n' "$title"
+        printf '    title: "%s"\n' "$safe_title"
         printf '    file: "%s"\n' "$filename"
         printf '    type: %s\n' "$doc_type"
         printf '    date: %s\n' "$today"
