@@ -86,7 +86,6 @@ pi_patterns_write() {
 
     local sql_file
     sql_file=$(mktemp)
-    trap 'rm -f "$sql_file"' RETURN
 
     if [[ "$exists" -gt 0 ]]; then
         # Update existing pattern
@@ -126,6 +125,7 @@ pi_patterns_write() {
     fi
 
     sqlite3 "$db" < "$sql_file"
+    rm -f "$sql_file"
     episodic_log "INFO" "Pattern written: $id (confidence=$confidence, weight=$weight)"
 }
 
@@ -190,7 +190,6 @@ pi_patterns_add_evidence() {
 
     local sql_file
     sql_file=$(mktemp)
-    trap 'rm -f "$sql_file"' RETURN
 
     {
         printf ".timeout ${EPISODIC_BUSY_TIMEOUT}\n"
@@ -199,6 +198,7 @@ pi_patterns_add_evidence() {
     } > "$sql_file"
 
     sqlite3 "$db" < "$sql_file"
+    rm -f "$sql_file"
 }
 
 # Retire a pattern (set status to 'retired').
