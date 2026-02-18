@@ -105,6 +105,25 @@ pi-progression-status --project PROJECT
 IMPORTANT: Always use a SINGLE Bash call with heredoc pipe. Do NOT use the Write tool. Do NOT write to /tmp. The --file - flag reads from stdin.
 PROJECT = basename of current working directory.
 Types: baseline, deepening, correction, pivot, synthesis.
+
+## Context Checkpointing
+
+During long sessions (20+ turns), proactively save important discoveries, decisions, and corrections before they're lost to context compaction. Use `pi-checkpoint` via Bash:
+
+```bash
+cat <<'DOC' | pi-checkpoint --project PROJECT --title "Short Title" --type TYPE
+Your important content here.
+DOC
+```
+
+**When to checkpoint (do this WITHOUT being asked):**
+- You discover something surprising or non-obvious
+- A significant decision is made with specific reasoning
+- You correct a previous assumption with evidence
+- You find exact commands, configs, or values the user will need again
+
+Types: discoveries, decisions, context, corrections.
+Do NOT checkpoint routine work or obvious facts. Only checkpoint things that would be painful to rediscover.
 PIINSTRUCTIONS
 echo ""
 
@@ -113,6 +132,23 @@ if type pi_progression_generate_context &>/dev/null; then
     prog_context=$(pi_progression_generate_context "$PROJECT" 2>/dev/null)
     if [[ -n "$prog_context" ]]; then
         echo "$prog_context"
+        echo ""
+    fi
+fi
+
+# Output user preferences (cross-project, highest priority)
+PREFS_FILE="$EPISODIC_KNOWLEDGE_DIR/_user/preferences.md"
+if [[ -f "$PREFS_FILE" && ! -L "$PREFS_FILE" ]]; then
+    prefs_lines=""
+    while IFS= read -r line; do
+        if [[ "$line" == "- "* ]]; then
+            prefs_lines+="$line"$'\n'
+        fi
+    done < "$PREFS_FILE"
+    if [[ -n "$prefs_lines" ]]; then
+        echo "## User Preferences"
+        echo ""
+        printf '%s' "$prefs_lines"
         echo ""
     fi
 fi
@@ -230,6 +266,29 @@ if type episodic_knowledge_is_configured &>/dev/null && episodic_knowledge_is_co
 fi
 
 # Deep-dive is now part of progressions (project-understanding), injected above
+
+# Output recent checkpoints for project if available
+CHECKPOINT_DIR="$EPISODIC_KNOWLEDGE_DIR/$PROJECT/checkpoints"
+if [[ -d "$CHECKPOINT_DIR" ]]; then
+    # Get the 3 most recent checkpoints by filename (timestamped)
+    checkpoint_files=$(ls -r "$CHECKPOINT_DIR"/*.md 2>/dev/null | head -3)
+    if [[ -n "$checkpoint_files" ]]; then
+        echo ""
+        echo "# Recent Checkpoints (${PROJECT})"
+        echo ""
+        while IFS= read -r cp_file; do
+            [[ -f "$cp_file" ]] || continue
+            cp_title=$(grep '^title:' "$cp_file" 2>/dev/null | head -1 | sed 's/^title: *"*//;s/"*$//')
+            cp_type=$(grep '^type:' "$cp_file" 2>/dev/null | head -1 | sed 's/^type: *//')
+            cp_date=$(grep '^saved_at:' "$cp_file" 2>/dev/null | head -1 | sed 's/^saved_at: *//')
+            # Extract body (after second ---)
+            cp_body=$(awk 'BEGIN{f=0} /^---$/{f++; next} f>=2' "$cp_file" 2>/dev/null | head -10)
+            echo "## ${cp_title:-checkpoint} [${cp_type:-context}] (${cp_date:-?})"
+            echo "$cp_body"
+            echo ""
+        done <<< "$checkpoint_files"
+    fi
+fi
 
 # Output indexed documents for project if available
 doc_count=$(episodic_db_exec "SELECT count(*) FROM documents WHERE project='$SAFE_PROJECT';" 2>/dev/null || echo "0")

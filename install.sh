@@ -143,6 +143,14 @@ fi
 ln -s "$EPISODIC_ROOT/skills/progress" "$PROGRESS_LINK"
 echo "  ✓ /progress skill installed"
 
+# Install /remember
+REMEMBER_LINK="$SKILLS_DIR/remember"
+if [[ -L "$REMEMBER_LINK" || -d "$REMEMBER_LINK" ]]; then
+    rm -rf "$REMEMBER_LINK"
+fi
+ln -s "$EPISODIC_ROOT/skills/remember" "$REMEMBER_LINK"
+echo "  ✓ /remember skill installed"
+
 # Install /reflect
 REFLECT_LINK="$SKILLS_DIR/reflect"
 if [[ -L "$REFLECT_LINK" || -d "$REFLECT_LINK" ]]; then

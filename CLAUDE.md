@@ -78,6 +78,12 @@ Tests create temp databases in `/tmp` and clean up via `trap`. Most tests don't 
 - `index.sh` — Document text extraction (format-aware: direct read, pdftotext, html-strip, textutil/pandoc for docx) + FTS5 indexing with SHA-256 change detection. Schema is owned by `db.sh` — this module delegates `episodic_db_init`.
 - `patterns.sh` — User behavioral pattern learning (cross-project). Extracts patterns from ALL projects' transcripts via Opus, stores in `user_patterns`/`pattern_evidence` tables + knowledge repo `_user/patterns/`. Patterns have confidence escalation (sessions + projects), weight boosting (+0.25/project, cap 2.0), and dormancy (180 days). Context injection via `pi_patterns_generate_context` (max 8 patterns). Auto-extraction every `PI_PATTERNS_EXTRACT_EVERY` (5) sessions. Config: `PI_PATTERNS_MODEL`, `PI_PATTERNS_THINKING_BUDGET` (16K), `PI_PATTERNS_MAX_INJECT` (8), `PI_PATTERNS_DORMANCY_DAYS` (180).
 
+### Preferences & Checkpoints
+
+- `bin/pi-remember` — Explicit user preference storage. Add/list/remove directives stored in `_user/preferences.md` in knowledge repo. Injected into every session before patterns. Dedup, symlink protection.
+- `bin/pi-checkpoint` — Context checkpointing for long sessions. Reads from stdin, writes timestamped YAML+markdown files to `<project>/checkpoints/`. Types: discoveries, decisions, context, corrections. Recent 3 injected into next session. Behavioral instructions in pi-context tell Claude to proactively checkpoint important discoveries.
+- `skills/remember/SKILL.md` — `/remember` slash command for storing preferences from conversation.
+
 ### Deep Dive System
 
 Deep dives are comprehensive codebase analysis documents that answer "what is this project?" — covering architecture, tech stack, patterns, and gotchas. Generated via Opus with extended thinking.

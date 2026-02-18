@@ -15,7 +15,8 @@ Six interconnected systems:
 3. **Skill Synthesis** — Opus analyzes sessions and generates project-specific skills (structured prompts/playbooks) that capture recurring patterns, with auto-synthesis every N sessions
 4. **Progressions** — Track how your understanding of a topic evolves across a session or across sessions. A sequence of numbered documents that captures the full reasoning arc: initial assessment, deepenings, corrections, pivots, and synthesis. Corrections never decay — future sessions inherit what was wrong and why.
 5. **User Patterns** — Learn cross-project behavioral patterns from how you work (verification habits, investigation methodology, common corrections) and inject them as behavioral instructions into every session. Patterns get stronger with evidence from multiple sessions and projects.
-6. **Knowledge Repo** — Git-backed per-project knowledge store that syncs across machines, versions skill evolution, stores progressions, and serves as the durable source of truth
+6. **Preferences & Checkpoints** — Store explicit user directives (`/remember always use bun`) and save important discoveries during long sessions (`pi-checkpoint`) before they're lost to context compaction. Both persist in the knowledge repo and are injected into future sessions.
+7. **Knowledge Repo** — Git-backed per-project knowledge store that syncs across machines, versions skill evolution, stores progressions, and serves as the durable source of truth
 
 ## Why Open Source
 
@@ -96,6 +97,8 @@ The value each team brings is their own accumulated intelligence — the reasoni
 │   ├── pi-index                        # Index knowledge repo docs for search
 │   ├── pi-deep-dive                    # Generate codebase analysis
 │   ├── pi-patterns                     # User behavioral pattern management
+│   ├── pi-remember                     # Explicit user preference storage
+│   ├── pi-checkpoint                   # Save important context during long sessions
 │   ├── pi-progression-init             # Create a new progression
 │   ├── pi-progression-add              # Add a document to a progression
 │   ├── pi-progression-status           # Show progression state
@@ -106,6 +109,7 @@ The value each team brings is their own accumulated intelligence — the reasoni
 │   └── on-stop.sh                      # Stop hook
 ├── skills/
 │   ├── recall/SKILL.md                 # /recall — search sessions + progressions
+│   ├── remember/SKILL.md               # /remember — store explicit user preferences
 │   ├── save-skill/SKILL.md             # /save-skill — save insight as skill
 │   ├── progress/SKILL.md               # /progress — manage reasoning progressions
 │   └── reflect/SKILL.md                # /reflect — synthesize progression state
@@ -162,12 +166,14 @@ SessionStart hook fires
 
 The context block injected at session start includes (in order):
 
-1. **Progression behavioral instructions** — when and how to create progressions
+1. **Progression behavioral instructions** — when and how to create progressions, checkpointing instructions
 2. **Active progressions** — current position, corrections, open questions
-3. **User behavioral patterns** — cross-project instructions (verification habits, investigation methodology, etc.)
-4. **Recent sessions** — last 3 session summaries for context continuity
-5. **Project skills** — pinned (manual), fresh (full content), aging (one-line)
-6. **Indexed documents** — listing of files in the knowledge repo
+3. **User preferences** — explicit directives (from `/remember`)
+4. **User behavioral patterns** — cross-project instructions (verification habits, investigation methodology, etc.)
+5. **Recent sessions** — last 3 session summaries for context continuity
+6. **Project skills** — pinned (manual), fresh (full content), aging (one-line)
+7. **Recent checkpoints** — last 3 checkpoints from this project
+8. **Indexed documents** — listing of files in the knowledge repo
 
 ```markdown
 # Project Intelligence
@@ -811,6 +817,11 @@ pi-patterns backfill             # Pattern extraction only
 | `pi-synthesize` | Generate/update skills for current project |
 | `pi-index --all` | Index all knowledge repo documents |
 | `pi-deep-dive` | Generate codebase analysis |
+| **Preferences & Checkpoints** | |
+| `pi-remember <text>` | Store an explicit preference |
+| `pi-remember --list` | List all preferences |
+| `pi-remember --remove N` | Remove preference by number |
+| `pi-checkpoint --title T --type TYPE` | Save context checkpoint (reads stdin) |
 | **Patterns** | |
 | `pi-patterns extract` | Extract user behavioral patterns from recent sessions |
 | `pi-patterns list [--status S] [--category C]` | List patterns (default: active) |
@@ -826,6 +837,7 @@ pi-patterns backfill             # Pattern extraction only
 | `pi-progression-conclude --project P --topic T` | Mark progression as concluded |
 | **Slash Commands** | |
 | `/recall <terms>` | Search sessions + documents + progressions |
+| `/remember <preference>` | Store an explicit preference for all sessions |
 | `/save-skill [name]` | Save conversation insight as a pinned skill |
 | `/progress <subcommand>` | Manage reasoning progressions |
 | `/reflect [topic]` | Synthesize progression state via Opus |

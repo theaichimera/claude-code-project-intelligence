@@ -1,0 +1,118 @@
+#!/usr/bin/env bash
+# pi-checkpoint: Save important context from the current session before it's lost
+# Called proactively by Claude during long sessions, or manually by the user.
+set -euo pipefail
+
+BIN_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+source "$BIN_DIR/../lib/config.sh"
+[[ -f "$BIN_DIR/../lib/knowledge.sh" ]] && source "$BIN_DIR/../lib/knowledge.sh"
+
+usage() {
+    cat <<EOF
+Usage: pi-checkpoint [OPTIONS]
+
+Save important context from the current session to prevent loss during
+context compaction. Reads from stdin.
+
+The checkpoint is saved as a timestamped file in the knowledge repo
+under the current project's checkpoints/ directory.
+
+Options:
+  --project NAME      Project name (default: derived from CWD)
+  --title TITLE       Short title for the checkpoint
+  --type TYPE         Type: discoveries, decisions, context, corrections (default: context)
+  -h, --help          Show this help
+
+Examples:
+  # Pipe content from heredoc (recommended usage from Claude Code)
+  cat <<'DOC' | pi-checkpoint --title "API rate limits" --type discoveries
+  Discovered that the Stripe API has a 100 req/s limit per key.
+  The retry-after header uses seconds, not milliseconds.
+  DOC
+
+  # Quick checkpoint from echo
+  echo "Database pool max should be 20, not default 10" | pi-checkpoint --title "DB pool size"
+EOF
+}
+
+PROJECT=""
+TITLE=""
+TYPE="context"
+
+while [[ $# -gt 0 ]]; do
+    case "$1" in
+        --project) PROJECT="$2"; shift 2 ;;
+        --title) TITLE="$2"; shift 2 ;;
+        --type) TYPE="$2"; shift 2 ;;
+        -h|--help) usage; exit 0 ;;
+        *) echo "Unknown option: $1" >&2; exit 1 ;;
+    esac
+done
+
+# Derive project from CWD if not specified
+if [[ -z "$PROJECT" ]]; then
+    PROJECT=$(basename "${CWD:-$(pwd)}")
+fi
+
+# Validate type
+case "$TYPE" in
+    discoveries|decisions|context|corrections) ;;
+    *) echo "ERROR: Invalid type '$TYPE'. Use: discoveries, decisions, context, corrections" >&2; exit 1 ;;
+esac
+
+# Read content from stdin
+CONTENT=""
+if [[ ! -t 0 ]]; then
+    CONTENT=$(cat)
+fi
+
+if [[ -z "$CONTENT" ]]; then
+    echo "ERROR: No content provided. Pipe content via stdin." >&2
+    echo "Example: echo 'important discovery' | pi-checkpoint --title 'my checkpoint'" >&2
+    exit 1
+fi
+
+# Generate timestamp and filename
+TIMESTAMP=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
+DATE_SLUG=$(date -u +"%Y%m%d-%H%M%S")
+
+# Sanitize title for filename
+if [[ -n "$TITLE" ]]; then
+    SAFE_TITLE=$(printf '%s' "$TITLE" | tr '[:upper:]' '[:lower:]' | tr -cd 'a-z0-9 ' | tr ' ' '-' | head -c 50)
+    FILENAME="${DATE_SLUG}-${SAFE_TITLE}.md"
+else
+    FILENAME="${DATE_SLUG}-checkpoint.md"
+fi
+
+# Sanitize project name
+SAFE_PROJECT=$(printf '%s' "$PROJECT" | tr -cd 'a-zA-Z0-9._-')
+
+# Write checkpoint
+CHECKPOINT_DIR="$EPISODIC_KNOWLEDGE_DIR/$SAFE_PROJECT/checkpoints"
+mkdir -p "$CHECKPOINT_DIR"
+
+CHECKPOINT_FILE="$CHECKPOINT_DIR/$FILENAME"
+
+# Refuse to write to symlinks
+if [[ -L "$CHECKPOINT_FILE" ]]; then
+    echo "ERROR: Refusing to write to symlink: $CHECKPOINT_FILE" >&2
+    exit 1
+fi
+
+{
+    echo "---"
+    echo "project: $PROJECT"
+    echo "type: $TYPE"
+    echo "title: \"${TITLE:-checkpoint}\""
+    echo "saved_at: $TIMESTAMP"
+    echo "---"
+    echo ""
+    echo "$CONTENT"
+} > "$CHECKPOINT_FILE"
+
+echo "Checkpoint saved: $CHECKPOINT_FILE"
+
+# Push to knowledge repo if configured
+if type episodic_knowledge_push &>/dev/null && episodic_knowledge_is_configured 2>/dev/null; then
+    episodic_knowledge_push "Checkpoint: ${TITLE:-context} ($PROJECT)" &>/dev/null &
+fi

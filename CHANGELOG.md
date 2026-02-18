@@ -20,6 +20,18 @@ All notable changes to claude-episodic-memory are documented in this file.
   - Config: `PI_PATTERNS_MODEL`, `PI_PATTERNS_THINKING_BUDGET`, `PI_PATTERNS_MAX_INJECT`, `PI_PATTERNS_EXTRACT_EVERY`, `PI_PATTERNS_DORMANCY_DAYS`, `PI_PATTERNS_WEIGHT_CAP`
   - `tests/test-patterns.sh`: 22 tests (28 assertions) covering storage, injection, security
   - Security: SQL injection prevention, path traversal prevention, symlink protection, category allowlist, weight cap enforcement
+- **Explicit Preferences** (`pi-remember`) — store explicit user directives that persist across all sessions
+  - `bin/pi-remember`: CLI with add, list, remove, clear
+  - `/remember` slash command for Claude Code
+  - Stored in knowledge repo at `_user/preferences.md` (Git-synced)
+  - Injected before behavioral patterns in every session context
+  - Deduplication, symlink protection
+- **Context Checkpointing** (`pi-checkpoint`) — save important discoveries during long sessions before context compaction
+  - `bin/pi-checkpoint`: CLI that reads from stdin, writes timestamped checkpoint files
+  - Types: discoveries, decisions, context, corrections
+  - Stored in knowledge repo at `<project>/checkpoints/` (Git-synced)
+  - Recent checkpoints (last 3) injected into next session context
+  - Behavioral instructions tell Claude to proactively checkpoint without being asked
 - **Deep Dive system** — comprehensive codebase analysis documents
   - `lib/deep-dive.sh`: context collection, Opus API with extended thinking, read/write/exists
   - `bin/episodic-deep-dive`: CLI with `--project`, `--path`, `--refresh`, `--force`, `--dry-run`

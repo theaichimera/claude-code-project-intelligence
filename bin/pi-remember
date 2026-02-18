@@ -1,0 +1,176 @@
+#!/usr/bin/env bash
+# pi-remember: Store explicit user preferences in the knowledge repo
+set -euo pipefail
+
+BIN_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+source "$BIN_DIR/../lib/config.sh"
+[[ -f "$BIN_DIR/../lib/knowledge.sh" ]] && source "$BIN_DIR/../lib/knowledge.sh"
+
+PREFS_DIR="$EPISODIC_KNOWLEDGE_DIR/_user"
+PREFS_FILE="$PREFS_DIR/preferences.md"
+
+usage() {
+    cat <<EOF
+Usage: pi-remember [OPTIONS] <preference>
+       pi-remember --list
+       pi-remember --remove <number>
+
+Store explicit user preferences that persist across all sessions and projects.
+
+Commands:
+  pi-remember "always use bun instead of npm"     Add a preference
+  pi-remember --list                               List all preferences
+  pi-remember --remove 3                           Remove preference #3
+  pi-remember --clear                              Remove all preferences
+
+Options:
+  -h, --help          Show this help
+
+Preferences are stored in the knowledge repo at _user/preferences.md
+and injected into every session before project-specific context.
+EOF
+}
+
+# Ensure preferences file exists
+ensure_prefs_file() {
+    mkdir -p "$PREFS_DIR"
+    if [[ ! -f "$PREFS_FILE" ]]; then
+        printf '# User Preferences\n\nExplicit preferences that apply across all projects and sessions.\n\n' > "$PREFS_FILE"
+    fi
+    # Refuse to write to symlinks
+    if [[ -L "$PREFS_FILE" ]]; then
+        echo "ERROR: Refusing to operate on symlink: $PREFS_FILE" >&2
+        exit 1
+    fi
+}
+
+# List all preferences
+list_prefs() {
+    ensure_prefs_file
+    local count=0
+    while IFS= read -r line; do
+        if [[ "$line" == "- "* ]]; then
+            count=$((count + 1))
+            printf "%3d. %s\n" "$count" "${line#- }"
+        fi
+    done < "$PREFS_FILE"
+    if [[ $count -eq 0 ]]; then
+        echo "No preferences stored yet."
+        echo "Add one with: pi-remember \"always use bun instead of npm\""
+    fi
+}
+
+# Add a preference
+add_pref() {
+    local pref="$1"
+    ensure_prefs_file
+
+    # Check for duplicates (case-insensitive)
+    local lower_pref
+    lower_pref=$(printf '%s' "$pref" | tr '[:upper:]' '[:lower:]')
+    while IFS= read -r line; do
+        if [[ "$line" == "- "* ]]; then
+            local lower_line
+            lower_line=$(printf -- '%s' "${line#- }" | tr '[:upper:]' '[:lower:]')
+            if [[ "$lower_line" == "$lower_pref" ]]; then
+                echo "Preference already exists: ${line#- }"
+                return 0
+            fi
+        fi
+    done < "$PREFS_FILE"
+
+    # Append preference
+    printf -- '- %s\n' "$pref" >> "$PREFS_FILE"
+    echo "Remembered: $pref"
+
+    # Push to knowledge repo if configured
+    if type episodic_knowledge_push &>/dev/null && episodic_knowledge_is_configured 2>/dev/null; then
+        episodic_knowledge_push "Remember: $pref" &>/dev/null &
+    fi
+}
+
+# Remove a preference by number
+remove_pref() {
+    local num="$1"
+    ensure_prefs_file
+
+    if ! [[ "$num" =~ ^[0-9]+$ ]] || [[ "$num" -lt 1 ]]; then
+        echo "ERROR: Invalid preference number: $num" >&2
+        exit 1
+    fi
+
+    # Build new file without the target line
+    local count=0
+    local removed=""
+    local tmpfile
+    tmpfile=$(mktemp)
+    trap 'rm -f "$tmpfile"' RETURN
+
+    while IFS= read -r line; do
+        if [[ "$line" == "- "* ]]; then
+            count=$((count + 1))
+            if [[ $count -eq $num ]]; then
+                removed="${line#- }"
+                continue
+            fi
+        fi
+        printf -- '%s\n' "$line" >> "$tmpfile"
+    done < "$PREFS_FILE"
+
+    if [[ -z "$removed" ]]; then
+        echo "ERROR: Preference #$num not found (only $count preferences exist)" >&2
+        exit 1
+    fi
+
+    mv "$tmpfile" "$PREFS_FILE"
+    echo "Removed: $removed"
+
+    # Push to knowledge repo if configured
+    if type episodic_knowledge_push &>/dev/null && episodic_knowledge_is_configured 2>/dev/null; then
+        episodic_knowledge_push "Forget: $removed" &>/dev/null &
+    fi
+}
+
+# Clear all preferences
+clear_prefs() {
+    ensure_prefs_file
+    printf '# User Preferences\n\nExplicit preferences that apply across all projects and sessions.\n\n' > "$PREFS_FILE"
+    echo "All preferences cleared."
+
+    if type episodic_knowledge_push &>/dev/null && episodic_knowledge_is_configured 2>/dev/null; then
+        episodic_knowledge_push "Clear all preferences" &>/dev/null &
+    fi
+}
+
+# Parse arguments
+if [[ $# -eq 0 ]]; then
+    usage
+    exit 1
+fi
+
+case "$1" in
+    --list|-l)
+        list_prefs
+        ;;
+    --remove|-r)
+        if [[ -z "${2:-}" ]]; then
+            echo "Usage: pi-remember --remove <number>" >&2
+            exit 1
+        fi
+        remove_pref "$2"
+        ;;
+    --clear)
+        clear_prefs
+        ;;
+    -h|--help)
+        usage
+        ;;
+    -*)
+        echo "Unknown option: $1" >&2
+        exit 1
+        ;;
+    *)
+        # Join all remaining args as the preference text
+        add_pref "$*"
+        ;;
+esac
