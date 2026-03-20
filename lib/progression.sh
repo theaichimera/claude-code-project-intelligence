@@ -35,7 +35,11 @@ _pi_topic_to_slug() {
 _pi_progressions_dir() {
     local project
     project=$(pi_sanitize_name "$1")
-    echo "$EPISODIC_KNOWLEDGE_DIR/$project/progressions"
+    if [[ "$project" == "_global" ]]; then
+        echo "$EPISODIC_KNOWLEDGE_DIR/_user/progressions"
+    else
+        echo "$EPISODIC_KNOWLEDGE_DIR/$project/progressions"
+    fi
 }
 
 # Get the directory for a specific progression
@@ -45,7 +49,11 @@ _pi_progression_dir() {
     project=$(pi_sanitize_name "$1")
     local slug
     slug=$(_pi_topic_to_slug "$2")
-    echo "$EPISODIC_KNOWLEDGE_DIR/$project/progressions/$slug"
+    if [[ "$project" == "_global" ]]; then
+        echo "$EPISODIC_KNOWLEDGE_DIR/_user/progressions/$slug"
+    else
+        echo "$EPISODIC_KNOWLEDGE_DIR/$project/progressions/$slug"
+    fi
 }
 
 # ─────────────────────────────────────────────────
