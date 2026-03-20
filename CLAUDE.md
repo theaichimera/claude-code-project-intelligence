@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## What This Is
 
-Project Intelligence: a learning system for Claude Code that gets smarter within every project over time. Implemented entirely in Bash. Archives session transcripts, generates searchable summaries, synthesizes reusable skills, tracks reasoning progressions, and manages a Git-backed knowledge repo for cross-machine persistence. Also a Claude Code plugin (`.claude-plugin/plugin.json`).
+Project Intelligence: a learning system for Claude Code built around three concepts — **progressions** (track evolving understanding of a topic), **recall** (search past sessions), and **remember** (store explicit preferences). Implemented entirely in Bash. Archives session transcripts, generates searchable summaries, and manages a Git-backed knowledge repo for cross-machine persistence. Also a Claude Code plugin (`.claude-plugin/plugin.json`).
 
 ## Development Commands
 
@@ -13,15 +13,14 @@ Project Intelligence: a learning system for Claude Code that gets smarter within
 ./tests/run-all.sh
 
 # Run a single test suite
-./tests/test-init.sh            # DB schema + idempotency
-./tests/test-archive.sh         # Session archival + dedup
-./tests/test-query.sh           # FTS5 search + BM25 ranking
-./tests/test-roundtrip.sh       # Full capture -> store -> retrieve cycle
-./tests/test-knowledge.sh       # Knowledge repo git operations
-./tests/test-synthesize.sh      # Skill generation + auto-synthesis
-./tests/test-index.sh           # Document indexing + search
-./tests/test-project-name.sh    # Project name derivation from paths
-./tests/test-deep-dive.sh       # Deep-dive context collection + read/write
+./tests/test-init.sh                # DB schema + idempotency
+./tests/test-archive.sh             # Session archival + dedup
+./tests/test-query.sh               # FTS5 search + BM25 ranking
+./tests/test-roundtrip.sh           # Full capture -> store -> retrieve cycle
+./tests/test-knowledge.sh           # Knowledge repo git operations
+./tests/test-index.sh               # Document indexing + search
+./tests/test-project-name.sh        # Project name derivation from paths
+./tests/test-progression-search.sh  # Progression cross-project FTS5 search
 
 # Run individual regression tests (not in run-all.sh)
 ./tests/test-busy-timeout.sh       # SQLite busy_timeout wrappers
@@ -37,9 +36,8 @@ Project Intelligence: a learning system for Claude Code that gets smarter within
 ./tests/test-fts5-escape.sh        # FTS5 MATCH injection prevention
 ./tests/test-insert-session-escape.sh # SQL escaping in session inserts
 ./tests/test-git-conflict-safety.sh   # Git rebase conflict marker detection
-./tests/test-patterns.sh              # User behavioral pattern learning (storage, injection, security)
 
-# Install (sets up hooks, DB, skills)
+# Install (sets up hooks, DB)
 ./install.sh
 
 # Uninstall (removes hooks, symlinks)
@@ -52,59 +50,39 @@ Tests create temp databases in `/tmp` and clean up via `trap`. Most tests don't 
 
 **Everything is Bash.** No package manager, no build step. Dependencies: `sqlite3`, `curl`, `jq`, `git`.
 
+### Three Concepts
+
+- **Progressions** (`/progress`): Track evolving understanding of a topic as a sequence of documents (baseline, deepenings, corrections, pivots). Stored in the knowledge repo per-project. Supports cross-project progressions via `--project` override and `_global` namespace. Searchable via FTS5.
+- **Recall** (`/recall`): Full-text search across all archived sessions. BM25-ranked results from the SQLite FTS5 index.
+- **Remember** (`/remember`): Explicit user preferences stored in `_user/preferences.md` in the knowledge repo. Injected into every session. Add/list/remove directives with dedup and symlink protection.
+
 ### Core Data Flow
 
 1. **Stop hook** (`hooks/on-stop.sh`): Quick metadata-only archive of current session (no API call), pushes knowledge repo changes
 2. **SessionStart hook** (`hooks/on-session-start.sh`): Background tasks (git pull knowledge, archive previous session with full summary, index documents) + foreground context injection
-3. **Archive** (`bin/episodic-archive`): Parses JSONL -> extracts metadata (`lib/extract.sh`) -> calls Anthropic API for structured summary (`lib/summarize.sh`) -> stores in SQLite (`lib/db.sh`) -> copies raw JSONL to archive dir
-4. **Context injection** (`bin/episodic-context`): Outputs recent sessions + skills (with decay tiers) as markdown for the current project
-5. **Synthesis** (`bin/episodic-synthesize`): Loads sessions from DB + existing skills -> calls Opus to identify patterns -> writes skill markdown files to knowledge repo -> git commit+push
+3. **Archive** (`bin/pi-archive`): Parses JSONL -> extracts metadata (`lib/extract.sh`) -> calls Anthropic API for structured summary (`lib/summarize.sh`) -> stores in SQLite (`lib/db.sh`) -> copies raw JSONL to archive dir
+4. **Context injection** (`bin/pi-context`): Outputs recent sessions, preferences, and active progressions as markdown for the current project
 
 ### Three Storage Layers
 
-- **SQLite FTS5** (`~/.claude/memory/episodic.db`): Local cache, fully regenerable. Tables: `sessions`, `summaries`, `sessions_fts`, `documents`, `documents_fts`, `synthesis_log`, `archive_log`, `user_patterns`, `pattern_evidence`, `pattern_extraction_log`
+- **SQLite FTS5** (`~/.claude/memory/episodic.db`): Local cache, fully regenerable. Tables: `sessions`, `summaries`, `sessions_fts`, `documents`, `documents_fts`, `synthesis_log`, `archive_log`
 - **JSONL archives** (configurable dir): Raw session transcripts, lossless copies
-- **Knowledge repo** (separate Git repo at `~/.claude/knowledge/`): Source of truth for skills. Per-project dirs with `skills/*.md` and `context.md`. Global `_user/patterns/` for cross-project behavioral patterns.
+- **Knowledge repo** (separate Git repo at `~/.claude/knowledge/`): Source of truth. Per-project dirs with `progressions/`. Global `_user/preferences.md` for cross-project preferences.
 
 ### Library Modules (`lib/`)
 
 - `config.sh` — **Single source of truth for all defaults.** Paths, model IDs, thresholds — all as env-var-overridable variables. Sourced by every other module. Supports `.env` local overrides. No other module should redeclare defaults.
-- `db.sh` — SQLite schema init (idempotent), CRUD, FTS5 search, synthesis tracking. All SQLite access goes through wrapper functions (see Key Patterns below).
+- `db.sh` — SQLite schema init (idempotent), CRUD, FTS5 search. All SQLite access goes through wrapper functions (see Key Patterns below).
 - `extract.sh` — JSONL parsing. Filters out progress/snapshot events, extracts user+assistant messages for summarization.
 - `summarize.sh` — Anthropic API call (supports extended thinking). Sends extracted transcript, gets structured JSON summary.
 - `knowledge.sh` — Git operations for the knowledge repo (clone, pull, push, conflict handling). All git operations serialized via lockfile.
-- `synthesize.sh` — Opus-powered skill generation (v2). Reads raw session transcripts from JSONL archives (not just summaries) for deep, specific skills. Uses extended thinking. Supports create/update/delete actions. Auto-synthesis check (`EPISODIC_SYNTHESIZE_EVERY`), backfill suppression via `EPISODIC_BACKFILL_MODE`. Config: `EPISODIC_SYNTHESIZE_THINKING_BUDGET` (16K), `EPISODIC_SYNTHESIZE_TRANSCRIPT_COUNT` (5), `EPISODIC_SYNTHESIZE_TRANSCRIPT_CHARS` (30K).
-- `deep-dive.sh` — Codebase deep-dive generation. Context collection (tree, manifests, entry points, README, Docker), Opus API with extended thinking, YAML frontmatter write/read.
+- `progression.sh` — Progression tracking. Topic slug generation, YAML metadata management, document sequencing (init/add/conclude/status/search). Supports cross-project search and `_global` namespace.
 - `index.sh` — Document text extraction (format-aware: direct read, pdftotext, html-strip, textutil/pandoc for docx) + FTS5 indexing with SHA-256 change detection. Schema is owned by `db.sh` — this module delegates `episodic_db_init`.
-- `patterns.sh` — User behavioral pattern learning (cross-project). Extracts patterns from ALL projects' transcripts via Opus, stores in `user_patterns`/`pattern_evidence` tables + knowledge repo `_user/patterns/`. Patterns have confidence escalation (sessions + projects), weight boosting (+0.25/project, cap 2.0), and dormancy (180 days). Context injection via `pi_patterns_generate_context` (max 8 patterns). Auto-extraction every `PI_PATTERNS_EXTRACT_EVERY` (5) sessions. Config: `PI_PATTERNS_MODEL`, `PI_PATTERNS_THINKING_BUDGET` (16K), `PI_PATTERNS_MAX_INJECT` (8), `PI_PATTERNS_DORMANCY_DAYS` (180).
+- `activity.sh` — Activity tracking for session context.
 
-### Preferences & Checkpoints
+### Archive Directory
 
-- `bin/pi-remember` — Explicit user preference storage. Add/list/remove directives stored in `_user/preferences.md` in knowledge repo. Injected into every session before patterns. Dedup, symlink protection.
-- `bin/pi-checkpoint` — Context checkpointing for long sessions. Reads from stdin, writes timestamped YAML+markdown files to `<project>/checkpoints/`. Types: discoveries, decisions, context, corrections. Recent 3 injected into next session. Behavioral instructions in pi-context tell Claude to proactively checkpoint important discoveries.
-- `skills/remember/SKILL.md` — `/remember` slash command for storing preferences from conversation.
-
-### Deep Dive System
-
-Deep dives are comprehensive codebase analysis documents that answer "what is this project?" — covering architecture, tech stack, patterns, and gotchas. Generated via Opus with extended thinking.
-
-- `lib/deep-dive.sh` — Core: context collection, API call, read/write/exists
-- `bin/episodic-deep-dive` — CLI: `--project`, `--path`, `--refresh`, `--force`, `--dry-run`
-- `skills/deep-dive/SKILL.md` — Interactive `/deep-dive` command
-- Auto-triggered on first visit to a project (background, in `on-session-start.sh`)
-- Stored at `~/.claude/knowledge/<project>/deep-dive.md` with YAML frontmatter
-- Injected into context between skills and documents
-- Config: `EPISODIC_DEEP_DIVE_MODEL` (Opus 4.6), `EPISODIC_DEEP_DIVE_THINKING_BUDGET` (16K), `EPISODIC_DEEP_DIVE_TIMEOUT` (300s)
-
-### Skill Decay System
-
-Skills injected at session start use age-based tiers:
-- **Pinned** (source: manual, from `/save-skill`): Always full content, never decays
-- **Fresh** (<=30 days): Full content
-- **Aging** (31-90 days): One-line summary only
-- **Stale** (>90 days): Omitted from injection, still searchable via `/recall`
-
-Thresholds configurable via `EPISODIC_SKILL_FRESH_DAYS` / `EPISODIC_SKILL_AGING_DAYS`.
+The `archive/` directory contains code for removed features (synthesize, deep-dive, patterns, checkpoints, save-skill). Kept for reference but not active.
 
 ## Key Patterns
 
