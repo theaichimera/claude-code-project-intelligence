@@ -98,10 +98,9 @@ if [[ -n "$PROJECT_FILTER" ]]; then
     project_clause="AND d.project = '$escaped_project'"
 fi
 
-# Execute search — use char(30) as field separator to avoid conflicts with content
-SEP=$'\x1e'
+# Execute search — use pipe-delimited output from sqlite3 (default)
 results=$(episodic_db_exec "
-SELECT d.project || char(30) || d.title || char(30) || d.file_name || char(30) ||
+SELECT d.project, d.title, d.file_name,
        replace(snippet(documents_fts, 4, '>>>', '<<<', '...', 40), char(10), ' ')
 FROM documents_fts
 JOIN documents d ON d.id = documents_fts.doc_id
@@ -117,10 +116,12 @@ if [[ -z "$results" ]]; then
     exit 0
 fi
 
-# Format output
-while IFS="$SEP" read -r project title file_name snippet; do
+# Format output (sqlite3 default separator is |)
+while IFS='|' read -r project title file_name snippet; do
+    [[ -z "$project" ]] && continue
     echo "[$project] $title — $file_name"
     if [[ -n "$snippet" ]]; then
         echo "  $snippet"
     fi
+    echo ""
 done <<< "$results"
