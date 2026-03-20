@@ -42,9 +42,9 @@ EPISODIC_LOG="${EPISODIC_LOG:-$HOME/.claude/memory/episodic.log}"
 # Auto-reflect after every document add (true/false). Set to false to disable.
 PI_REFLECT_AUTO="${PI_REFLECT_AUTO:-true}"
 # Model for reflect API calls
-PI_REFLECT_MODEL="${PI_REFLECT_MODEL:-claude-sonnet-4-5-20250929}"
+PI_REFLECT_MODEL="${PI_REFLECT_MODEL:-claude-opus-4-6}"
 # Extended thinking budget for reflect
-PI_REFLECT_THINKING_BUDGET="${PI_REFLECT_THINKING_BUDGET:-10000}"
+PI_REFLECT_THINKING_BUDGET="${PI_REFLECT_THINKING_BUDGET:-32000}"
 
 # Activity intelligence configuration
 PI_ACTIVITY_GATHER_DAYS="${PI_ACTIVITY_GATHER_DAYS:-30}"

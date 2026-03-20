@@ -624,8 +624,8 @@ pi_progression_generate_context() {
 pi_progression_reflect() {
     local project="$1"
     local topic="$2"
-    local model="${PI_REFLECT_MODEL:-claude-sonnet-4-5-20250929}"
-    local budget="${PI_REFLECT_THINKING_BUDGET:-10000}"
+    local model="${PI_REFLECT_MODEL:-claude-opus-4-6}"
+    local budget="${PI_REFLECT_THINKING_BUDGET:-32000}"
 
     if [[ -z "$project" || -z "$topic" ]]; then
         episodic_log "ERROR" "pi_progression_reflect: project and topic required"
