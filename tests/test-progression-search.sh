@@ -186,4 +186,26 @@ else
     exit 1
 fi
 
+# Test 12: Context injection includes _global progressions
+echo -n "  12. Context includes _global progressions... "
+ctx_global=$(pi_progression_generate_context "_global" 2>/dev/null)
+if echo "$ctx_global" | grep -q "AWS Cost Patterns"; then
+    echo "PASS"
+else
+    echo "FAIL: _global progression not in context"
+    echo "  Context: $ctx_global"
+    exit 1
+fi
+
+# Test 13: --all flag lists cross-project progressions
+echo -n "  13. --all lists cross-project progressions... "
+all_out=$("$SCRIPT_DIR/../bin/pi-progression-status" --all 2>/dev/null)
+if echo "$all_out" | grep -q "projA" && echo "$all_out" | grep -q "projB" && echo "$all_out" | grep -q "_global"; then
+    echo "PASS"
+else
+    echo "FAIL: --all should list progressions from all projects"
+    echo "  Output: $all_out"
+    exit 1
+fi
+
 echo "=== test-progression-search: ALL PASS ==="

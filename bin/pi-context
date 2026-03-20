@@ -137,6 +137,16 @@ if type pi_progression_generate_context &>/dev/null; then
     fi
 fi
 
+# Output _global progressions (cross-project, always injected)
+if type pi_progression_generate_context &>/dev/null; then
+    global_prog_context=$(pi_progression_generate_context "_global" 2>/dev/null)
+    if [[ -n "$global_prog_context" ]]; then
+        # Replace "Active Progressions" heading with "Global Progressions"
+        echo "${global_prog_context//## Active Progressions/## Global Progressions}"
+        echo ""
+    fi
+fi
+
 # Output user preferences (cross-project, highest priority)
 PREFS_FILE="$EPISODIC_KNOWLEDGE_DIR/_user/preferences.md"
 if [[ -f "$PREFS_FILE" && ! -L "$PREFS_FILE" ]]; then
