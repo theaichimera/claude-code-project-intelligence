@@ -90,4 +90,43 @@ else
     exit 1
 fi
 
+# Source index.sh for FTS5 indexing tests
+source "$SCRIPT_DIR/../lib/index.sh"
+episodic_db_init "$EPISODIC_DB"
+
+# Test 6: Index progression document with file_type override
+echo -n "  6. Index with file_type=progression... "
+pi_progression_create "_global" "AWS Cost Patterns" >/dev/null
+content_file=$(mktemp)
+printf '# AWS Cost Patterns\n\nReserved instances save 40%% on steady-state workloads.\n' > "$content_file"
+doc_path=$(pi_progression_add "_global" "AWS Cost Patterns" 0 "Initial Findings" "baseline" "$content_file")
+rm -f "$content_file"
+# Manually index with override (testing the override itself)
+episodic_index_file "$doc_path" "_global" "progression"
+ft=$(episodic_db_exec "SELECT file_type FROM documents WHERE project='_global' LIMIT 1;" "$EPISODIC_DB")
+if [[ "$ft" == "progression" ]]; then
+    echo "PASS"
+else
+    echo "FAIL: expected file_type=progression, got $ft"
+    exit 1
+fi
+
+# Test 7: Auto-index on progression add
+echo -n "  7. Auto-index on progression add... "
+# Clear previous entries
+episodic_db_exec "DELETE FROM documents;" "$EPISODIC_DB"
+episodic_db_exec "DELETE FROM documents_fts;" "$EPISODIC_DB"
+pi_progression_create "projA" "Migration Plan" >/dev/null
+content_tmp=$(mktemp)
+printf '# Migration Plan\n\nPhase 1: dual-write to both databases.\n' > "$content_tmp"
+pi_progression_add "projA" "Migration Plan" 0 "Phase One" "baseline" "$content_tmp" >/dev/null
+rm -f "$content_tmp"
+ft_a=$(episodic_db_exec "SELECT file_type FROM documents WHERE project='projA' AND file_type='progression' LIMIT 1;" "$EPISODIC_DB")
+if [[ "$ft_a" == "progression" ]]; then
+    echo "PASS"
+else
+    echo "FAIL: progression doc not auto-indexed (got: '$ft_a')"
+    exit 1
+fi
+
 echo "=== test-progression-search: ALL PASS ==="

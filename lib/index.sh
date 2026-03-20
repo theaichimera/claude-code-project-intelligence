@@ -101,6 +101,7 @@ episodic_index_content_hash() {
 episodic_index_file() {
     local file_path="$1"
     local project="$2"
+    local file_type_override="${3:-}"
     local db="${EPISODIC_DB}"
 
     # Resolve to absolute path
@@ -150,9 +151,14 @@ episodic_index_file() {
     # Capitalize first letter
     title="$(echo "${title:0:1}" | tr '[:lower:]' '[:upper:]')${title:1}"
 
-    # Determine file type from extension
-    local file_type="${file_name##*.}"
-    file_type=$(echo "$file_type" | tr '[:upper:]' '[:lower:]')
+    # Determine file type from extension (or use override)
+    local file_type
+    if [[ -n "$file_type_override" ]]; then
+        file_type="$file_type_override"
+    else
+        file_type="${file_name##*.}"
+        file_type=$(echo "$file_type" | tr '[:upper:]' '[:lower:]')
+    fi
 
     # Get file size
     local file_size

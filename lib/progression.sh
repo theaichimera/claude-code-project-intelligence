@@ -12,6 +12,7 @@
 
 _EPISODIC_LIB_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 source "$_EPISODIC_LIB_DIR/config.sh"
+[[ -f "$_EPISODIC_LIB_DIR/index.sh" ]] && source "$_EPISODIC_LIB_DIR/index.sh"
 
 # Alias for the rename transition — use pi_sanitize_name or episodic_sanitize_name
 pi_sanitize_name() {
@@ -263,6 +264,12 @@ pi_progression_add() {
     _pi_yaml_set "$yaml_file" "updated" "$today"
 
     episodic_log "INFO" "Added doc $doc_number ($doc_type) to progression: $project / $topic"
+
+    # Index into FTS5 for cross-project search
+    if type episodic_index_file &>/dev/null; then
+        (episodic_index_file "$doc_path" "$project" "progression" 2>/dev/null) || true
+    fi
+
     echo "$doc_path"
 }
 
