@@ -106,6 +106,15 @@ IMPORTANT: Always use a SINGLE Bash call with heredoc pipe. Do NOT use the Write
 PROJECT = basename of current working directory.
 Types: baseline, deepening, correction, pivot, synthesis.
 
+**Cross-project progressions:** Use `--project FOLDER_NAME` to create/add to a progression in a different project without leaving the current directory. Use `--project _global` for knowledge not tied to any project.
+
+**Search across all projects:** When the user asks about past work, decisions, or knowledge that might exist in other projects, search progressions:
+```bash
+pi-progression-search "search terms"
+pi-progression-search "search terms" --project specific-project
+```
+This searches ALL progression documents via FTS5, regardless of which folder you're in. Use this proactively when the user's question might be answered by work done in another project.
+
 PIINSTRUCTIONS
 echo ""
 
