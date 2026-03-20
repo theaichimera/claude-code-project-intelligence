@@ -1,0 +1,73 @@
+#!/usr/bin/env bash
+# pi-switch: Prepare to switch Claude Code to a different project folder
+# Writes a switch target file that the shell wrapper picks up after Claude exits.
+set -euo pipefail
+
+BIN_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+source "$BIN_DIR/../lib/config.sh"
+source "$BIN_DIR/../lib/db.sh"
+
+SWITCH_FILE="$HOME/.claude/.switch-target"
+
+usage() {
+    cat <<EOF
+Usage: pi-switch <project-name-or-path>
+
+Resolve a project name to its folder path and write a switch target.
+After Claude exits, the shell wrapper (cc function) will cd to this
+folder and restart Claude.
+
+The project is resolved by:
+  1. If it's an absolute path that exists, use it
+  2. Query sessions DB for the most recent session with that project name
+  3. Check ~/cc/<name> as a fallback
+
+Examples:
+  pi-switch cloudfix
+  pi-switch ~/cc/cloudfix
+  pi-switch pi-dev
+EOF
+}
+
+if [[ $# -lt 1 || "$1" == "-h" || "$1" == "--help" ]]; then
+    usage
+    exit 1
+fi
+
+TARGET="$1"
+
+# 1. Absolute path
+if [[ "$TARGET" = /* && -d "$TARGET" ]]; then
+    echo "$TARGET" > "$SWITCH_FILE"
+    echo "Switch target: $TARGET"
+    exit 0
+fi
+
+# 2. Query sessions DB for project_path
+if [[ -f "$EPISODIC_DB" ]]; then
+    safe_target=$(episodic_sql_escape "$TARGET")
+    db_path=$(episodic_db_exec "
+        SELECT project_path FROM sessions
+        WHERE project = '$safe_target' AND project_path IS NOT NULL AND project_path != ''
+        ORDER BY created_at DESC LIMIT 1;
+    " "$EPISODIC_DB" 2>/dev/null)
+
+    if [[ -n "$db_path" && -d "$db_path" ]]; then
+        echo "$db_path" > "$SWITCH_FILE"
+        echo "Switch target: $db_path (from session history)"
+        exit 0
+    fi
+fi
+
+# 3. Check common locations
+for parent in "$HOME/cc" "$HOME/code" "$HOME/projects" "$HOME"; do
+    if [[ -d "$parent/$TARGET" ]]; then
+        echo "$parent/$TARGET" > "$SWITCH_FILE"
+        echo "Switch target: $parent/$TARGET"
+        exit 0
+    fi
+done
+
+echo "ERROR: Could not resolve project '$TARGET' to a folder" >&2
+echo "  Try: pi-switch /absolute/path/to/project" >&2
+exit 1

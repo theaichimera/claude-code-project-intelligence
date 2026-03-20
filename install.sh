@@ -167,6 +167,14 @@ fi
 ln -s "$EPISODIC_ROOT/skills/help" "$HELP_LINK"
 echo "  ✓ /help skill installed"
 
+# Install /switch
+SWITCH_LINK="$SKILLS_DIR/switch"
+if [[ -L "$SWITCH_LINK" || -d "$SWITCH_LINK" ]]; then
+    rm -rf "$SWITCH_LINK"
+fi
+ln -s "$EPISODIC_ROOT/skills/switch" "$SWITCH_LINK"
+echo "  ✓ /switch skill installed"
+
 # Install /plugins
 PLUGINS_LINK="$SKILLS_DIR/plugins"
 if [[ -L "$PLUGINS_LINK" || -d "$PLUGINS_LINK" ]]; then
