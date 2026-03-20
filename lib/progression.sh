@@ -270,6 +270,11 @@ pi_progression_add() {
         (episodic_index_file "$doc_path" "$project" "progression" 2>/dev/null) || true
     fi
 
+    # Auto-reflect: update current_position, corrections, open_questions (background)
+    if [[ "${PI_REFLECT_AUTO:-true}" == "true" ]]; then
+        (pi_progression_reflect "$project" "$topic" &>/dev/null) &
+    fi
+
     echo "$doc_path"
 }
 
@@ -607,4 +612,262 @@ pi_progression_generate_context() {
         printf '## Active Progressions\n\n'
         printf '%s' "$output"
     fi
+}
+
+# ─────────────────────────────────────────────────
+# Auto-reflect: synthesize current position after document add
+# ─────────────────────────────────────────────────
+
+# Reflect on a progression: read all documents, call API, update YAML.
+# Usage: pi_progression_reflect <project> <topic>
+# Requires ANTHROPIC_API_KEY. Runs in background when called from add.
+pi_progression_reflect() {
+    local project="$1"
+    local topic="$2"
+    local model="${PI_REFLECT_MODEL:-claude-sonnet-4-5-20250929}"
+    local budget="${PI_REFLECT_THINKING_BUDGET:-10000}"
+
+    if [[ -z "$project" || -z "$topic" ]]; then
+        episodic_log "ERROR" "pi_progression_reflect: project and topic required"
+        return 1
+    fi
+
+    if [[ -z "${ANTHROPIC_API_KEY:-}" ]]; then
+        episodic_log "WARN" "pi_progression_reflect: ANTHROPIC_API_KEY not set, skipping"
+        return 0
+    fi
+
+    local dir
+    dir=$(_pi_progression_dir "$project" "$topic")
+    local yaml_file="$dir/progression.yaml"
+
+    if [[ ! -f "$yaml_file" ]]; then
+        episodic_log "ERROR" "pi_progression_reflect: progression not found: $dir"
+        return 1
+    fi
+
+    # Collect all document content in order
+    local all_docs=""
+    local doc_count=0
+    local current_id="" current_title="" current_type="" current_file=""
+
+    # Parse document entries from YAML
+    while IFS= read -r line; do
+        if [[ "$line" =~ ^[[:space:]]*-[[:space:]]*id:[[:space:]]*\"?([0-9]+)\"? ]]; then
+            # Process previous document if we have one
+            if [[ -n "$current_id" && -n "$current_file" && -f "$dir/$current_file" ]]; then
+                local content
+                content=$(cat "$dir/$current_file" 2>/dev/null)
+                all_docs+="[Document $current_id: $current_title ($current_type)]"$'\n'
+                all_docs+="$content"$'\n\n'
+                doc_count=$((doc_count + 1))
+            fi
+            current_id=$(printf '%02d' "$((10#${BASH_REMATCH[1]}))")
+            current_title="" current_type="" current_file=""
+        fi
+        if [[ "$line" =~ ^[[:space:]]*title:[[:space:]]*\"?([^\"]+)\"?$ ]]; then
+            current_title="${BASH_REMATCH[1]}"
+        fi
+        if [[ "$line" =~ ^[[:space:]]*type:[[:space:]]*(.*) ]]; then
+            current_type="${BASH_REMATCH[1]}"
+        fi
+        if [[ "$line" =~ ^[[:space:]]*file:[[:space:]]*\"?([^\"]+)\"?$ ]]; then
+            current_file="${BASH_REMATCH[1]}"
+        fi
+    done < "$yaml_file"
+
+    # Process last document
+    if [[ -n "$current_id" && -n "$current_file" && -f "$dir/$current_file" ]]; then
+        local content
+        content=$(cat "$dir/$current_file" 2>/dev/null)
+        all_docs+="[Document $current_id: $current_title ($current_type)]"$'\n'
+        all_docs+="$content"$'\n\n'
+        doc_count=$((doc_count + 1))
+    fi
+
+    if [[ $doc_count -eq 0 ]]; then
+        episodic_log "WARN" "pi_progression_reflect: no documents found"
+        return 0
+    fi
+
+    # Cap at 50K chars
+    if [[ ${#all_docs} -gt 50000 ]]; then
+        all_docs="${all_docs:0:50000}"
+    fi
+
+    # Sanitize: strip control chars
+    all_docs=$(printf '%s' "$all_docs" | tr -d '\000-\010\013\014\016-\037')
+
+    local ptopic
+    ptopic=$(_pi_yaml_get "$yaml_file" "topic" 2>/dev/null || echo "$topic")
+
+    local system_prompt='You analyze knowledge progressions — sequences of documents tracking evolving understanding of a topic. Some documents correct earlier ones.
+
+Output ONLY valid JSON with this exact schema:
+{
+  "current_position": "2-3 sentence summary of what we know NOW, accounting for all corrections",
+  "corrections": ["Doc NN claimed X, but Doc MM showed Y"],
+  "open_questions": ["Specific actionable question"]
+}
+Rules:
+- current_position: What is the CURRENT best understanding? Reference specific numbers, resources, findings.
+- corrections: Only include actual corrections where a later doc contradicts an earlier one. Format: "Doc NN claimed X, but Doc MM showed Y"
+- open_questions: What is still unresolved? Make them specific and actionable.
+- If a field has no entries, use an empty array []
+- Output ONLY the JSON object, no markdown fences, no explanation'
+
+    local request_json
+    request_json=$(jq -n \
+        --arg model "$model" \
+        --arg system "$system_prompt" \
+        --arg docs "$all_docs" \
+        --arg topic "$ptopic" \
+        --argjson budget "$budget" \
+        '{
+            model: $model,
+            max_tokens: ($budget + 4096),
+            thinking: {
+                type: "enabled",
+                budget_tokens: $budget
+            },
+            system: $system,
+            messages: [{
+                role: "user",
+                content: ("Analyze this knowledge progression on: \"" + $topic + "\"\n\n" + $docs + "\n\nOutput ONLY the JSON object.")
+            }]
+        }')
+
+    if [[ -z "$request_json" ]]; then
+        episodic_log "ERROR" "pi_progression_reflect: failed to build request JSON"
+        return 1
+    fi
+
+    episodic_log "INFO" "Reflecting on $project / $topic ($doc_count docs, model=$model)..."
+
+    local response
+    response=$(curl -s --max-time 120 \
+        https://api.anthropic.com/v1/messages \
+        -H "x-api-key: $ANTHROPIC_API_KEY" \
+        -H "anthropic-version: 2023-06-01" \
+        -H "content-type: application/json" \
+        -d "$request_json" 2>/dev/null)
+
+    if [[ $? -ne 0 || -z "$response" ]]; then
+        episodic_log "ERROR" "pi_progression_reflect: API call failed"
+        return 1
+    fi
+
+    # Check for API errors
+    local error_type
+    error_type=$(echo "$response" | jq -r '.error.type // empty' 2>/dev/null)
+    if [[ -n "$error_type" ]]; then
+        local error_msg
+        error_msg=$(echo "$response" | jq -r '.error.message // "unknown error"' 2>/dev/null)
+        episodic_log "ERROR" "pi_progression_reflect: API error: $error_type - $error_msg"
+        return 1
+    fi
+
+    # Extract text content (handle thinking responses)
+    local raw_content
+    raw_content=$(echo "$response" | jq -r '[.content[] | select(.type == "text")] | last | .text // empty' 2>/dev/null)
+
+    if [[ -z "$raw_content" ]]; then
+        episodic_log "ERROR" "pi_progression_reflect: no text in API response"
+        return 1
+    fi
+
+    # Strip markdown fences if present
+    local json_content="$raw_content"
+    json_content=$(echo "$json_content" | sed 's/^```json//; s/^```//; s/```$//')
+
+    # Parse the JSON response
+    local current_position corrections_json questions_json
+    current_position=$(echo "$json_content" | jq -r '.current_position // empty' 2>/dev/null)
+    corrections_json=$(echo "$json_content" | jq -r '.corrections // []' 2>/dev/null)
+    questions_json=$(echo "$json_content" | jq -r '.open_questions // []' 2>/dev/null)
+
+    if [[ -z "$current_position" ]]; then
+        episodic_log "WARN" "pi_progression_reflect: could not parse current_position from response"
+        return 1
+    fi
+
+    # Update progression.yaml
+    _pi_yaml_set "$yaml_file" "current_position" "$current_position"
+
+    # Update corrections list
+    local corr_tmp
+    corr_tmp=$(mktemp)
+    local in_corrections=0
+    local wrote_corrections=0
+    while IFS= read -r line; do
+        if [[ "$line" =~ ^corrections: ]]; then
+            printf 'corrections:\n' >> "$corr_tmp"
+            # Write new corrections from API
+            local corr_count
+            corr_count=$(echo "$corrections_json" | jq -r 'length' 2>/dev/null || echo "0")
+            if [[ "$corr_count" -gt 0 ]]; then
+                echo "$corrections_json" | jq -r '.[]' 2>/dev/null | while IFS= read -r c; do
+                    printf '  - "%s"\n' "$(echo "$c" | sed 's/"/\\"/g')" >> "$corr_tmp"
+                done
+            else
+                printf 'corrections: []\n' > /dev/null  # keep the line we already wrote
+            fi
+            wrote_corrections=1
+            in_corrections=1
+            continue
+        fi
+        if [[ $in_corrections -eq 1 ]]; then
+            if [[ "$line" =~ ^[[:space:]]*-[[:space:]] ]]; then
+                continue  # skip old correction entries
+            else
+                in_corrections=0
+                printf '%s\n' "$line" >> "$corr_tmp"
+            fi
+        else
+            printf '%s\n' "$line" >> "$corr_tmp"
+        fi
+    done < "$yaml_file"
+    mv "$corr_tmp" "$yaml_file"
+    rm -f "$corr_tmp" 2>/dev/null
+
+    # Update open_questions list
+    local q_tmp
+    q_tmp=$(mktemp)
+    local in_questions=0
+    while IFS= read -r line; do
+        if [[ "$line" =~ ^open_questions: ]]; then
+            printf 'open_questions:\n' >> "$q_tmp"
+            local q_count
+            q_count=$(echo "$questions_json" | jq -r 'length' 2>/dev/null || echo "0")
+            if [[ "$q_count" -gt 0 ]]; then
+                echo "$questions_json" | jq -r '.[]' 2>/dev/null | while IFS= read -r q; do
+                    printf '  - "%s"\n' "$(echo "$q" | sed 's/"/\\"/g')" >> "$q_tmp"
+                done
+            fi
+            in_questions=1
+            continue
+        fi
+        if [[ $in_questions -eq 1 ]]; then
+            if [[ "$line" =~ ^[[:space:]]*-[[:space:]] ]]; then
+                continue
+            else
+                in_questions=0
+                printf '%s\n' "$line" >> "$q_tmp"
+            fi
+        else
+            printf '%s\n' "$line" >> "$q_tmp"
+        fi
+    done < "$yaml_file"
+    mv "$q_tmp" "$yaml_file"
+    rm -f "$q_tmp" 2>/dev/null
+
+    local today
+    today=$(date -u +"%Y-%m-%d")
+    _pi_yaml_set "$yaml_file" "updated" "$today"
+
+    # Log usage
+    local input_tokens output_tokens
+    input_tokens=$(echo "$response" | jq -r '.usage.input_tokens // 0' 2>/dev/null)
+    output_tokens=$(echo "$response" | jq -r '.usage.output_tokens // 0' 2>/dev/null)
+    episodic_log "INFO" "Reflect complete: $project / $topic (${input_tokens} in / ${output_tokens} out)"
 }

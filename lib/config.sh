@@ -38,6 +38,14 @@ EPISODIC_CONTEXT_COUNT="${EPISODIC_CONTEXT_COUNT:-3}"
 EPISODIC_MAX_EXTRACT_CHARS="${EPISODIC_MAX_EXTRACT_CHARS:-100000}"
 EPISODIC_LOG="${EPISODIC_LOG:-$HOME/.claude/memory/episodic.log}"
 
+# Progression reflect configuration
+# Auto-reflect after every document add (true/false). Set to false to disable.
+PI_REFLECT_AUTO="${PI_REFLECT_AUTO:-true}"
+# Model for reflect API calls
+PI_REFLECT_MODEL="${PI_REFLECT_MODEL:-claude-sonnet-4-5-20250929}"
+# Extended thinking budget for reflect
+PI_REFLECT_THINKING_BUDGET="${PI_REFLECT_THINKING_BUDGET:-10000}"
+
 # Activity intelligence configuration
 PI_ACTIVITY_GATHER_DAYS="${PI_ACTIVITY_GATHER_DAYS:-30}"
 PI_ACTIVITY_MAX_INJECT="${PI_ACTIVITY_MAX_INJECT:-10}"
@@ -159,7 +167,7 @@ if [[ -f "$EPISODIC_ROOT/.env" ]]; then
         # Skip comments and blank lines
         [[ -z "$key" || "$key" == \#* ]] && continue
         # Only allow known EPISODIC_ and PI_ACTIVITY_ config variable names
-        [[ "$key" =~ ^(EPISODIC_|PI_ACTIVITY_)[A-Z_]+$ ]] || continue
+        [[ "$key" =~ ^(EPISODIC_|PI_ACTIVITY_|PI_REFLECT_)[A-Z_]+$ ]] || continue
         # Strip surrounding quotes from value
         value="${value#\"}"
         value="${value%\"}"
