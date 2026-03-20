@@ -208,4 +208,24 @@ else
     exit 1
 fi
 
+# Test 14: Reindex existing progressions
+echo -n "  14. Reindex existing progressions... "
+# Clear documents table to simulate pre-existing progressions without index
+episodic_db_exec "DELETE FROM documents WHERE file_type='progression';" "$EPISODIC_DB"
+episodic_db_exec "DELETE FROM documents_fts;" "$EPISODIC_DB"
+pre_count=$(episodic_db_exec "SELECT count(*) FROM documents WHERE file_type='progression';" "$EPISODIC_DB")
+if [[ "$pre_count" != "0" ]]; then
+    echo "FAIL: could not clear documents table"
+    exit 1
+fi
+# Reindex
+reindex_out=$("$SCRIPT_DIR/../bin/pi-progression-search" --reindex 2>/dev/null)
+post_count=$(episodic_db_exec "SELECT count(*) FROM documents WHERE file_type='progression';" "$EPISODIC_DB")
+if [[ "$post_count" -gt 0 ]]; then
+    echo "PASS ($post_count docs reindexed)"
+else
+    echo "FAIL: no documents reindexed"
+    exit 1
+fi
+
 echo "=== test-progression-search: ALL PASS ==="

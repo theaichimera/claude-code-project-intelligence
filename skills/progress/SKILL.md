@@ -26,6 +26,16 @@ Determine PROJECT from the current working directory (`basename` of CWD). Ask th
 
 Example: `/progress start ECS Task Placement Strategy`
 
+To create a progression for a different project (cross-project), pass `--project`:
+```bash
+${CLAUDE_PLUGIN_ROOT:-~/.claude/project-intelligence}/bin/pi-progression-init --project cloudfix --topic "Topic Name"
+```
+
+Use `_global` for progressions not tied to any project:
+```bash
+${CLAUDE_PLUGIN_ROOT:-~/.claude/project-intelligence}/bin/pi-progression-init --project _global --topic "AWS Cost Patterns"
+```
+
 ### add - Add a document to a progression
 
 Save the current analysis/finding as a numbered document in the progression.
@@ -112,7 +122,28 @@ ${CLAUDE_PLUGIN_ROOT:-~/.claude/project-intelligence}/bin/pi-progression-status 
 
 Shows all progressions with their status (active/concluded/parked).
 
+Add `--all` to list progressions across all projects:
+```bash
+${CLAUDE_PLUGIN_ROOT:-~/.claude/project-intelligence}/bin/pi-progression-status --all
+```
+
 Example: `/progress list`
+
+### search - Search progressions across all projects
+
+```bash
+${CLAUDE_PLUGIN_ROOT:-~/.claude/project-intelligence}/bin/pi-progression-search QUERY [--project PROJECT] [--limit N]
+```
+
+Searches all progression documents via FTS5 full-text search. Without `--project`, searches globally across all projects.
+
+Example: `/progress search "cost optimization"`
+Example: `/progress search "migration" --project cloudfix`
+
+To reindex existing progressions (run once after upgrading):
+```bash
+${CLAUDE_PLUGIN_ROOT:-~/.claude/project-intelligence}/bin/pi-progression-search --reindex
+```
 
 ## Guidelines
 
