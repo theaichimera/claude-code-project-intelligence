@@ -125,14 +125,6 @@ fi
 ln -s "$EPISODIC_ROOT/skills/recall" "$SKILL_LINK"
 echo "  ✓ /recall skill installed"
 
-# Install /save-skill
-SAVE_LINK="$SKILLS_DIR/save-skill"
-if [[ -L "$SAVE_LINK" || -d "$SAVE_LINK" ]]; then
-    rm -rf "$SAVE_LINK"
-fi
-ln -s "$EPISODIC_ROOT/skills/save-skill" "$SAVE_LINK"
-echo "  ✓ /save-skill skill installed"
-
 # /deep-dive removed — codebase analysis is now via /progress (Project Understanding)
 
 # Install /progress

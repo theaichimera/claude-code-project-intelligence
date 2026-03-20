@@ -9,7 +9,7 @@ echo ""
 
 passed=0
 failed=0
-tests=("test-project-name" "test-init" "test-archive" "test-query" "test-roundtrip" "test-knowledge" "test-synthesize" "test-index" "test-deep-dive")
+tests=("test-project-name" "test-init" "test-archive" "test-query" "test-roundtrip" "test-knowledge" "test-index" "test-progression-search")
 
 regression_tests=(
     "test-busy-timeout"
@@ -25,7 +25,6 @@ regression_tests=(
     "test-fts5-escape"
     "test-insert-session-escape"
     "test-git-conflict-safety"
-    "test-patterns"
 )
 
 for test in "${tests[@]}"; do
