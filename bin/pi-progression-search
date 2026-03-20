@@ -1,0 +1,126 @@
+#!/usr/bin/env bash
+# pi-progression-search: Search progression documents across all projects via FTS5
+set -euo pipefail
+
+BIN_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+source "$BIN_DIR/../lib/db.sh"
+source "$BIN_DIR/../lib/index.sh"
+
+usage() {
+    cat <<EOF
+Usage: pi-progression-search QUERY [--project PROJECT] [--limit N] [--reindex]
+
+Search progression documents across all projects via FTS5.
+
+Options:
+  --project PROJECT   Scope search to a single project (or _global)
+  --limit N           Maximum results (default: 10)
+  --reindex           Re-index all progression .md files before searching
+  -h, --help          Show this help
+
+Examples:
+  pi-progression-search "database migration"
+  pi-progression-search "cost" --project _global
+  pi-progression-search --reindex "reserved instances"
+EOF
+}
+
+QUERY=""
+PROJECT_FILTER=""
+LIMIT=10
+REINDEX=0
+
+while [[ $# -gt 0 ]]; do
+    case "$1" in
+        --project) PROJECT_FILTER="$2"; shift 2 ;;
+        --limit) LIMIT="$2"; shift 2 ;;
+        --reindex) REINDEX=1; shift ;;
+        -h|--help) usage; exit 0 ;;
+        -*) echo "Unknown option: $1" >&2; usage >&2; exit 1 ;;
+        *)
+            if [[ -z "$QUERY" ]]; then
+                QUERY="$1"
+            else
+                echo "Unexpected argument: $1" >&2; usage >&2; exit 1
+            fi
+            shift
+            ;;
+    esac
+done
+
+# Ensure DB is initialized
+episodic_db_init "$EPISODIC_DB"
+
+# Reindex if requested
+if [[ "$REINDEX" -eq 1 ]]; then
+    source "$BIN_DIR/../lib/progression.sh"
+    knowledge_dir="${EPISODIC_KNOWLEDGE_DIR:-$HOME/.claude/knowledge}"
+
+    for proj_dir in "$knowledge_dir"/*/; do
+        [[ -d "$proj_dir" ]] || continue
+        proj_name=$(basename "$proj_dir")
+
+        # Determine progressions path and project label
+        if [[ "$proj_name" == "_user" ]]; then
+            prog_dir="$proj_dir/progressions"
+            proj_label="_global"
+        else
+            prog_dir="$proj_dir/progressions"
+            proj_label="$proj_name"
+        fi
+
+        [[ -d "$prog_dir" ]] || continue
+
+        # Walk all .md files under progressions
+        while IFS= read -r -d '' md_file; do
+            (episodic_index_file "$md_file" "$proj_label" "progression")
+        done < <(find "$prog_dir" -name '*.md' -print0 2>/dev/null)
+    done
+    echo "Reindex complete."
+fi
+
+if [[ -z "$QUERY" ]]; then
+    if [[ "$REINDEX" -eq 1 ]]; then
+        exit 0
+    fi
+    echo "ERROR: QUERY is required" >&2
+    usage >&2
+    exit 1
+fi
+
+# Escape query for FTS5 safety
+safe_query=$(episodic_sql_escape "$(episodic_fts5_escape "$QUERY")")
+
+# Build project filter clause
+project_clause=""
+if [[ -n "$PROJECT_FILTER" ]]; then
+    escaped_project=$(episodic_sql_escape "$PROJECT_FILTER")
+    project_clause="AND d.project = '$escaped_project'"
+fi
+
+# Execute search — use char(30) as field separator to avoid conflicts with content
+SEP=$'\x1e'
+results=$(episodic_db_exec "
+SELECT d.project || char(30) || d.title || char(30) || d.file_name || char(30) ||
+       replace(snippet(documents_fts, 4, '>>>', '<<<', '...', 40), char(10), ' ')
+FROM documents_fts
+JOIN documents d ON d.id = documents_fts.doc_id
+WHERE documents_fts MATCH '$safe_query'
+  AND d.file_type = 'progression'
+  $project_clause
+ORDER BY rank
+LIMIT $LIMIT;
+" "$EPISODIC_DB")
+
+if [[ -z "$results" ]]; then
+    echo "No results found."
+    exit 0
+fi
+
+# Format output
+while IFS="$SEP" read -r project title file_name snippet; do
+    echo "[$project] $title — $file_name"
+    if [[ -n "$snippet" ]]; then
+        echo "  $snippet"
+    fi
+done <<< "$results"

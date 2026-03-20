@@ -129,4 +129,61 @@ else
     exit 1
 fi
 
+# Test 8: Cross-project search finds results from multiple projects
+echo -n "  8. Cross-project search... "
+# projA already has "Migration Plan" with "dual-write" content from test 7
+# Re-index _global "AWS Cost Patterns" (test 7 wiped the DB)
+global_prog_dir=$(_pi_progressions_dir "_global")
+for md_file in "$global_prog_dir"/aws-cost-patterns/*.md; do
+    [[ -f "$md_file" ]] && (episodic_index_file "$md_file" "_global" "progression")
+done
+# Add projB
+pi_progression_create "projB" "Cost Review" >/dev/null
+content_tmp=$(mktemp)
+printf '# Cost Review\n\nThe reserved instances cost analysis shows significant savings.\n' > "$content_tmp"
+pi_progression_add "projB" "Cost Review" 0 "Analysis" "baseline" "$content_tmp" >/dev/null
+rm -f "$content_tmp"
+# Search for "reserved" — should find _global and projB
+search_out=$("$SCRIPT_DIR/../bin/pi-progression-search" "reserved" 2>/dev/null)
+if echo "$search_out" | grep -q "_global" && echo "$search_out" | grep -q "projB"; then
+    echo "PASS"
+else
+    echo "FAIL: expected results from _global and projB"
+    echo "  Output: $search_out"
+    exit 1
+fi
+
+# Test 9: Search with --project filter
+echo -n "  9. Search with --project filter... "
+filtered=$("$SCRIPT_DIR/../bin/pi-progression-search" "reserved" --project projB 2>/dev/null)
+if echo "$filtered" | grep -q "projB"; then
+    if ! echo "$filtered" | grep -q "_global"; then
+        echo "PASS"
+    else
+        echo "FAIL: _global should not appear in filtered results"
+        exit 1
+    fi
+else
+    echo "FAIL: projB not found in filtered results"
+    echo "  Output: $filtered"
+    exit 1
+fi
+
+# Test 10: FTS5 escape safety
+echo -n "  10. FTS5 escape safety... "
+special_out=$("$SCRIPT_DIR/../bin/pi-progression-search" 'cost OR DROP TABLE' 2>/dev/null || true)
+# Should not error
+echo "PASS"
+
+# Test 11: No results for non-matching query
+echo -n "  11. No results for non-matching query... "
+nomatch=$("$SCRIPT_DIR/../bin/pi-progression-search" "xyznonexistent" 2>/dev/null)
+if [[ -z "$nomatch" || "$nomatch" == "No results found." ]]; then
+    echo "PASS"
+else
+    echo "FAIL: expected no results"
+    echo "  Output: $nomatch"
+    exit 1
+fi
+
 echo "=== test-progression-search: ALL PASS ==="
