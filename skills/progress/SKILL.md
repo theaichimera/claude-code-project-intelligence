@@ -151,10 +151,6 @@ ${CLAUDE_PLUGIN_ROOT:-~/.claude/project-intelligence}/bin/pi-progression-search 
 - **Number documents sequentially** starting from 00. Use `pi-progression-status` to find the next number.
 - **Always mark corrections explicitly.** When new data contradicts a previous document, use `--type correction --corrects NN` so the progression tracks what was wrong and why.
 - **Write content that captures reasoning**, not just conclusions. Future sessions need to understand *why* you reached a conclusion.
-- **Commit to the knowledge repo** after adding documents:
-  ```bash
-  cd ~/.claude/knowledge && git add -A && git commit -m "Progression: TOPIC - doc NN" && git push
-  ```
 
 ## Active Progressions in Context
 

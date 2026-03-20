@@ -10,13 +10,37 @@ Print the following reference card exactly as shown. Do not run any commands —
 
 ---
 
+## Progressions — How your understanding evolved
+
+| Command | What it does |
+|---------|-------------|
+| `/progress start <topic>` | Start tracking a new investigation |
+| `/progress add <type> "<title>"` | Add a document (baseline, deepening, correction, pivot, synthesis) |
+| `/progress correct <N> "<title>"` | Correct a previous document |
+| `/progress conclude <topic>` | Mark investigation complete |
+| `/progress show <topic>` | See current state + open questions |
+| `/progress list` | List all progressions |
+| `/progress search <terms>` | Search across all progressions |
+
 ## Episodic Memory — What you discussed
 
 | Command | What it does |
 |---------|-------------|
-| `/recall <terms>` | Search all your past Claude Code sessions |
+| `/recall <terms>` | Search all your past Claude Code sessions and documents |
 
 **Automatic:** Every session is archived, summarized, and indexed. Recent sessions are injected at start.
+
+## Preferences
+
+| Command | What it does |
+|---------|-------------|
+| `/remember <directive>` | Store a preference for all future sessions |
+
+## Synthesis
+
+| Command | What it does |
+|---------|-------------|
+| `/reflect [topic]` | Synthesize a progression's state via Opus |
 
 ## Activity Intelligence — What you did
 
@@ -31,24 +55,11 @@ Print the following reference card exactly as shown. Do not run any commands —
 
 **Setup:** `pi-activity sources add YOUR_GITHUB_USERNAME --org YOUR_ORG`
 
-## Progressions — How your understanding evolved
+## Plugins
 
 | Command | What it does |
 |---------|-------------|
-| `/progress start <topic>` | Start tracking a new investigation |
-| `/progress add <type> "<title>"` | Add a document (baseline, deepening, correction, pivot, synthesis) |
-| `/progress correct <N> "<title>"` | Correct a previous document |
-| `/progress show <topic>` | See current state + open questions |
-| `/progress conclude <topic>` | Mark investigation complete |
-| `/progress list` | List all progressions |
-
-## Knowledge & Preferences
-
-| Command | What it does |
-|---------|-------------|
-| `/remember <directive>` | Store a preference for all future sessions |
-| `/save-skill [name]` | Save current conversation insight as a reusable skill |
-| `/reflect [topic]` | Synthesize a progression's state via Opus |
+| `/plugins` | Manage installed plugins |
 
 ## CLI Commands (terminal)
 
@@ -68,15 +79,13 @@ pi-activity recent --days 7                   # Recent activity
 pi-progression-status                         # All progressions
 pi-progression-status --project <p> --topic <t>  # Specific one
 
-# Patterns & Preferences
-pi-patterns list              # See learned behavioral patterns
+# Preferences
 pi-remember <text>            # Store preference
 pi-remember --list            # List preferences
 
 # Knowledge
 pi-knowledge-sync             # Sync knowledge repo
 pi-index --all                # Re-index documents
-pi-deep-dive                  # Generate codebase analysis
 
 # Maintenance
 pi-export ~/backup.tar.gz    # Export for another machine
@@ -85,10 +94,8 @@ pi-import ~/backup.tar.gz    # Import on new machine
 
 ## What runs automatically
 
-- **Session start:** Archives previous session, syncs knowledge repo, injects context (progressions, patterns, preferences, skills, recent sessions, activity, checkpoints, documents)
+- **Session start:** Archives previous session, syncs knowledge repo, injects context (progressions, preferences, recent sessions, activity, documents)
 - **Session end:** Quick metadata archive, pushes knowledge repo
-- **Every 2 sessions:** Skill synthesis (looks for reusable patterns)
-- **Every 5 sessions:** Behavioral pattern extraction (cross-project)
 
 ---
 
