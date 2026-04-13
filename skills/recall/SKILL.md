@@ -1,16 +1,16 @@
 ---
 name: recall
-description: Search episodic memory - sessions, progressions, and documents across all projects
+description: "Search past Claude Code sessions, progression documents, and indexed files across all projects. Use when the user asks to find previous conversations, look up past work, recall earlier decisions, or search session history."
 user_invocable: true
 ---
 
-# /recall - Search Everything
+# /recall — Search Everything
 
-Search your archived sessions, progression documents, and indexed files across all projects.
+Search archived sessions, progression documents, and indexed files across all projects using full-text search.
 
 ## Usage
 
-The user invokes `/recall <search terms>` to find relevant past work.
+`/recall <search terms>`
 
 ## Instructions
 
@@ -34,24 +34,19 @@ If no arguments are provided, show recent sessions:
 ${CLAUDE_PLUGIN_ROOT:-~/.claude/project-intelligence}/bin/pi-query --recent 5
 ```
 
-Present the results in a clean format. For sessions, highlight:
-- Which sessions matched and when they occurred
-- Key decisions made in those sessions
-- Dead ends to avoid repeating
+If either search returns no results, suggest broadening terms or using `--recent` to browse recent sessions.
 
-For progressions, highlight:
-- Which project and topic the progression belongs to
-- The matched snippet showing relevant content
-- Note that progressions may be from other projects
+**For sessions**, highlight: which sessions matched and when, key decisions made, dead ends to avoid repeating.
 
-If the user wants more detail about a specific session, the raw JSONL archive can be found at `${CLAUDE_PLUGIN_ROOT:-~/.claude/project-intelligence}/archives/<project>/<session-id>.jsonl`.
+**For progressions**, highlight: project and topic, matched snippet, note when results come from other projects.
 
-To search only documents: `--docs-only`
-To search only progressions, use `/progress search` instead.
+For raw session detail: `${CLAUDE_PLUGIN_ROOT:-~/.claude/project-intelligence}/archives/<project>/<session-id>.jsonl`
+
+**Flags:** `--docs-only` to search only documents. Use `/progress search` to search only progressions.
 
 ## Examples
 
-- `/recall API optimization` - Find sessions and progressions about API optimization
-- `/recall cost savings` - Find cost-related work across all projects
-- `/recall --project myapp containers` - Search within myapp sessions only
-- `/recall --recent 10` - Show last 10 sessions
+- `/recall API optimization` — find sessions and progressions about API optimization
+- `/recall cost savings` — find cost-related work across all projects
+- `/recall --project myapp containers` — search within myapp sessions only
+- `/recall --recent 10` — show last 10 sessions
