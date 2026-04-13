@@ -1,66 +1,53 @@
 ---
 name: progress
-description: Track evolving understanding of a topic through a sequence of documents
+description: "Start, update, correct, and conclude knowledge progressions — sequences of numbered documents that track how understanding of a topic evolves across sessions. Use when the user asks to track an investigation, log a finding, correct a previous conclusion, or review the state of a research topic."
 user_invocable: true
 ---
 
-# /progress - Knowledge Progression Tracking
+# /progress — Knowledge Progression Tracking
 
-Track how your understanding of a topic evolves across sessions. A progression is a sequence of documents (baseline, deepenings, corrections, pivots) that captures the full arc of investigation.
+Manage knowledge progressions: sequences of numbered documents (baseline, deepening, correction, pivot, synthesis) that capture how understanding of a topic evolves across sessions.
+
+**CLI base path:** `${CLAUDE_PLUGIN_ROOT:-~/.claude/project-intelligence}/bin`
 
 ## Usage
 
 `/progress <subcommand> [args]`
 
+## Typical Workflow
+
+1. `/progress start "Topic Name"` — begin tracking
+2. `/progress add baseline "Initial Analysis"` — record first understanding
+3. `/progress add deepening "Deeper Look"` — build on prior docs
+4. `/progress correct 1 "Updated Finding"` — fix earlier conclusions
+5. `/progress show "Topic"` — verify progression state
+6. `/progress conclude "Topic"` — mark complete
+
 ## Subcommands
 
-### start - Begin a new progression
-
-Start tracking a new topic.
+### start — Begin a new progression
 
 ```bash
 ${CLAUDE_PLUGIN_ROOT:-~/.claude/project-intelligence}/bin/pi-progression-init --project PROJECT --topic "Topic Name"
 ```
 
-Determine PROJECT from the current working directory (`basename` of CWD). Ask the user for the topic name if not provided.
+Determine PROJECT from `basename` of CWD. Ask the user for the topic name if not provided. Use `--project _global` for progressions not tied to any project.
 
 Example: `/progress start ECS Task Placement Strategy`
 
-To create a progression for a different project (cross-project), pass `--project`:
-```bash
-${CLAUDE_PLUGIN_ROOT:-~/.claude/project-intelligence}/bin/pi-progression-init --project cloudfix --topic "Topic Name"
-```
-
-Use `_global` for progressions not tied to any project:
-```bash
-${CLAUDE_PLUGIN_ROOT:-~/.claude/project-intelligence}/bin/pi-progression-init --project _global --topic "AWS Cost Patterns"
-```
-
-### add - Add a document to a progression
-
-Save the current analysis/finding as a numbered document in the progression.
+### add — Add a document to a progression
 
 ```bash
 ${CLAUDE_PLUGIN_ROOT:-~/.claude/project-intelligence}/bin/pi-progression-add \
-  --project PROJECT \
-  --topic "TOPIC" \
-  --number NN \
-  --title "Document Title" \
-  --type TYPE \
-  [--file PATH] \
-  [--corrects NN]
+  --project PROJECT --topic "TOPIC" --number NN \
+  --title "Document Title" --type TYPE [--file PATH] [--corrects NN]
 ```
 
-**Document types:**
-- `baseline` — Initial understanding, first pass
-- `deepening` — Deeper analysis that builds on previous docs
-- `correction` — Corrects a previous document (use `--corrects NN`)
-- `pivot` — Fundamental change in direction or approach
-- `synthesis` — Consolidation of multiple findings
+**Document types:** `baseline` (initial understanding), `deepening` (builds on prior docs), `correction` (fixes a previous doc — use `--corrects NN`), `pivot` (fundamental direction change), `synthesis` (consolidation of findings).
 
-**How to determine the number:** Look at the existing progression with `pi-progression-status` and use the next sequential number.
+**Determine the next number** with `pi-progression-status` and use the next sequential value.
 
-**How to create content:** Pipe content directly via stdin using `--file -`. Do NOT write to /tmp. Example:
+**Pipe content via stdin** using `--file -` (do NOT write to /tmp):
 
 ```bash
 cat <<'DOC' | pi-progression-add --project PROJECT --topic TOPIC --number NN --title "Title" --type TYPE --file -
@@ -70,31 +57,17 @@ Content goes here...
 DOC
 ```
 
-The content should capture:
-- What was discovered/analyzed
-- Key data points or evidence
-- How this relates to previous documents in the progression
+After adding, verify with `pi-progression-status --project PROJECT --topic "TOPIC"` to confirm the document was recorded.
 
 Example: `/progress add correction "Actual Cost is $3.9K not $387K" --corrects 1`
 
-### correct - Mark an existing document as corrected
+### correct — Shortcut for adding a correction
 
-Use this when a new finding invalidates a previous document. This is a shortcut that combines `add` with `--type correction --corrects NN`.
-
-```bash
-${CLAUDE_PLUGIN_ROOT:-~/.claude/project-intelligence}/bin/pi-progression-add \
-  --project PROJECT \
-  --topic "TOPIC" \
-  --number NN \
-  --title "Correction Title" \
-  --type correction \
-  --corrects PREV_NN \
-  --file /path/to/content.md
-```
+Equivalent to `add --type correction --corrects NN`. Use when a new finding invalidates a previous document.
 
 Example: `/progress correct 1 "CUR shows actual cost is much lower"`
 
-### conclude - Mark a progression as complete
+### conclude — Mark a progression as complete
 
 ```bash
 ${CLAUDE_PLUGIN_ROOT:-~/.claude/project-intelligence}/bin/pi-progression-conclude --project PROJECT --topic "TOPIC"
@@ -102,9 +75,7 @@ ${CLAUDE_PLUGIN_ROOT:-~/.claude/project-intelligence}/bin/pi-progression-conclud
 
 Concluded progressions are no longer injected into session context but remain searchable.
 
-Example: `/progress conclude ECS Task Placement Strategy`
-
-### show - Show details of a specific progression
+### show — Show details of a specific progression
 
 ```bash
 ${CLAUDE_PLUGIN_ROOT:-~/.claude/project-intelligence}/bin/pi-progression-status --project PROJECT --topic "TOPIC"
@@ -112,52 +83,27 @@ ${CLAUDE_PLUGIN_ROOT:-~/.claude/project-intelligence}/bin/pi-progression-status 
 
 Shows: status, document list with types, corrections, current position.
 
-Example: `/progress show ECS Task Placement Strategy`
-
-### list - List all progressions for the project
+### list — List all progressions
 
 ```bash
 ${CLAUDE_PLUGIN_ROOT:-~/.claude/project-intelligence}/bin/pi-progression-status --project PROJECT
 ```
 
-Shows all progressions with their status (active/concluded/parked).
+Add `--all` to list progressions across all projects.
 
-Add `--all` to list progressions across all projects:
-```bash
-${CLAUDE_PLUGIN_ROOT:-~/.claude/project-intelligence}/bin/pi-progression-status --all
-```
-
-Example: `/progress list`
-
-### search - Search progressions across all projects
+### search — Search progressions across all projects
 
 ```bash
 ${CLAUDE_PLUGIN_ROOT:-~/.claude/project-intelligence}/bin/pi-progression-search QUERY [--project PROJECT] [--limit N]
 ```
 
-Searches all progression documents via FTS5 full-text search. Without `--project`, searches globally across all projects.
+Searches all progression documents via FTS5 full-text search. Without `--project`, searches globally. To reindex: `pi-progression-search --reindex`.
 
 Example: `/progress search "cost optimization"`
-Example: `/progress search "migration" --project cloudfix`
-
-To reindex existing progressions (run once after upgrading):
-```bash
-${CLAUDE_PLUGIN_ROOT:-~/.claude/project-intelligence}/bin/pi-progression-search --reindex
-```
 
 ## Guidelines
 
-- **One progression per investigation arc.** A new topic or completely separate question gets its own progression.
+- **One progression per investigation arc.** A new topic gets its own progression.
 - **Number documents sequentially** starting from 00. Use `pi-progression-status` to find the next number.
-- **Always mark corrections explicitly.** When new data contradicts a previous document, use `--type correction --corrects NN` so the progression tracks what was wrong and why.
-- **Write content that captures reasoning**, not just conclusions. Future sessions need to understand *why* you reached a conclusion.
-
-## Active Progressions in Context
-
-Active progressions are automatically injected into session context. They include:
-- Topic name and document count
-- Current position summary
-- Corrections (what was wrong)
-- Open questions (what to investigate next)
-
-This helps new sessions pick up where previous ones left off without re-reading all documents.
+- **Always mark corrections explicitly** with `--type correction --corrects NN` so the progression tracks what was wrong and why.
+- **Write content that captures reasoning**, not just conclusions. Future sessions need to understand *why* a conclusion was reached.
